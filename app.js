@@ -318,6 +318,9 @@ let currentTab = "games";
 let entertainmentList = [];
 let currentUser = null;
 let authMode = "login"; // "login" or "signup"
+// Flag: set true when the login/signup form handler already called showAppScreen+loadUserData
+// so onAuthStateChange SIGNED_IN doesn't redundantly fire them again.
+let authHandledByForm = false;
 
 // Local Cache Synchronization Utilities (Instant 0ms App Startup)
 function saveUserToCache(user) {
@@ -528,7 +531,8 @@ function setAuthMode(mode) {
         newToggleLink.addEventListener("click", async (e) => {
             e.preventDefault();
             if (authMode === "reset_password") {
-                await supabaseClient.auth.signOut();
+                try { await supabaseClient.auth.signOut(); } catch(err) {}
+                setAuthMode("login");
             } else if (authMode === "forgot_password") {
                 setAuthMode("login");
             } else {
@@ -569,7 +573,8 @@ if (toggleLink) {
     toggleLink.addEventListener("click", async (e) => {
         e.preventDefault();
         if (authMode === "reset_password") {
-            await supabaseClient.auth.signOut();
+            try { await supabaseClient.auth.signOut(); } catch(err) {}
+            setAuthMode("login");
         } else if (authMode === "forgot_password") {
             setAuthMode("login");
         } else {
@@ -640,14 +645,8 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
                     registerUsernameMapping(rawIdentifier, currentUser.email);
                 }
                 
-                // Immediately render cached items and show dashboard without waiting or needing reload
-                const cachedItems = getCachedItems(currentUser.id);
-                if (cachedItems && cachedItems.length > 0) {
-                    entertainmentList = cachedItems;
-                    render();
-                }
-                showAppScreen(currentUser);
-                loadUserData();
+                // Clean browser reload into the user dashboard
+                window.location.reload();
             }
         }
     } else if (authMode === "signup") {
@@ -676,16 +675,19 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
             if (data && data.user) {
                 currentUser = data.user;
                 saveUserToCache(currentUser);
-                showAppScreen(currentUser);
-                loadUserData();
+                // Clean browser reload into the user dashboard
+                window.location.reload();
+            } else {
+                showToast("Account created successfully! Please check your email or log in.");
+                setAuthMode("login");
             }
-            showToast("Account created successfully! You are now logged in.");
         }
     } else if (authMode === "forgot_password") {
         submitBtn.innerText = "Sending link...";
-        const { data, error } = await supabaseClient.auth.resetPasswordForEmail(rawIdentifier, {
-            redirectTo: window.location.origin
-        });
+        const redirectUrl = (window.location.protocol.startsWith("http") && window.location.origin && window.location.origin !== "null")
+            ? window.location.href.split("#")[0]
+            : undefined;
+        const { data, error } = await supabaseClient.auth.resetPasswordForEmail(rawIdentifier, redirectUrl ? { redirectTo: redirectUrl } : undefined);
 
         if (error) {
             errorDiv.innerText = error.message;
@@ -716,18 +718,28 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
             if (user) {
                 currentUser = user;
                 saveUserToCache(user);
-                showAppScreen(user);
-                await loadUserData();
+                window.location.reload();
             } else {
-                showAuthScreen();
+                setAuthMode("login");
             }
         }
     }
 });
 
 document.getElementById("profile-logout-btn").addEventListener("click", async () => {
-    document.getElementById("profile-drawer").classList.remove("open");
-    await supabaseClient.auth.signOut();
+    const profileDrawer = document.getElementById("profile-drawer");
+    if (profileDrawer) profileDrawer.classList.remove("open");
+    // Clear local cache BEFORE signOut so the reloaded page displays the auth screen cleanly
+    clearUserCache();
+    currentUser = null;
+    entertainmentList = [];
+    try {
+        await supabaseClient.auth.signOut();
+    } catch (e) {
+        console.warn("Sign out error:", e);
+    }
+    // Clean browser reload into the auth screen
+    window.location.reload();
 });
 
 // Instant Local-First Hydration (0ms Startup)
@@ -755,18 +767,36 @@ initLocalCache();
 // Listen for Auth Changes (Background Session Sync)
 supabaseClient.auth.onAuthStateChange(async (event, session) => {
     console.log("Auth State Changed Event:", event);
+
+    // Skip the initial session event — initLocalCache() already handles startup rendering.
+    // Letting INITIAL_SESSION through causes double loadUserData() calls and race conditions.
+    if (event === "INITIAL_SESSION") return;
+
     if (event === "PASSWORD_RECOVERY") {
         currentUser = session ? session.user : null;
         document.getElementById("app-container").style.display = "none";
         document.getElementById("auth-container").style.display = "flex";
         setAuthMode("reset_password");
+    } else if (event === "SIGNED_OUT") {
+        if (localStorage.getItem("vault_cached_user") || currentUser) {
+            clearUserCache();
+            currentUser = null;
+            entertainmentList = [];
+            window.location.reload();
+        } else {
+            showAuthScreen();
+        }
     } else if (session) {
         if (authMode === "reset_password") {
             currentUser = session.user;
             return;
         }
-        currentUser = session.user;
-        saveUserToCache(currentUser);
+        if (!currentUser || currentUser.id !== session.user.id) {
+            currentUser = session.user;
+            saveUserToCache(currentUser);
+            window.location.reload();
+            return;
+        }
         showAppScreen(currentUser);
         await loadUserData();
     } else {
@@ -800,7 +830,8 @@ async function loadUserData() {
             "patelvaidik2232@gmail.com", 
             "patelvaidik2232@gmail"
         ];
-        const shouldPopulate = allowedEmails.includes(currentUser.email.toLowerCase());
+        const userEmail = currentUser && currentUser.email ? currentUser.email.toLowerCase() : "";
+        const shouldPopulate = allowedEmails.includes(userEmail);
 
         if (shouldPopulate) {
             console.log("Empty database for authorized account, initializing defaults...");
@@ -959,6 +990,65 @@ async function loadNewsData() {
     }
 }
 
+// Helper to extract numeric timestamp from item id
+function extractTimestampFromId(id) {
+    if (!id) return 0;
+    const str = String(id);
+    const num = Number(str);
+    if (!isNaN(num) && num > 1000000000) return num;
+    const impMatch = str.match(/^imp_(\d{10,})/);
+    if (impMatch) {
+        const impNum = Number(impMatch[1]);
+        if (!isNaN(impNum)) return impNum;
+    }
+    return 0;
+}
+
+// Compare two items by when they were added/created (latest added first)
+function compareItemsByCreation(a, b) {
+    // 1. Try created_at timestamp
+    if (a.created_at && b.created_at) {
+        const tA = new Date(a.created_at).getTime();
+        const tB = new Date(b.created_at).getTime();
+        if (!isNaN(tA) && !isNaN(tB) && tB !== tA) {
+            return tB - tA;
+        }
+    } else if (a.created_at && !b.created_at) {
+        return -1;
+    } else if (!a.created_at && b.created_at) {
+        return 1;
+    }
+
+    // 2. Try timestamp extracted from id
+    const timeIdA = extractTimestampFromId(a.id);
+    const timeIdB = extractTimestampFromId(b.id);
+    if (timeIdA && timeIdB) {
+        if (timeIdB !== timeIdA) return timeIdB - timeIdA;
+    } else if (timeIdA && !timeIdB) {
+        return -1;
+    } else if (!timeIdA && timeIdB) {
+        return 1;
+    }
+
+    // 3. Try default item IDs like g1, g2... a1, a2...
+    const matchA = String(a.id || "").match(/^([ga])(\d+)$/);
+    const matchB = String(b.id || "").match(/^([ga])(\d+)$/);
+    if (matchA && matchB && matchA[1] === matchB[1]) {
+        const idNumA = Number(matchA[2]);
+        const idNumB = Number(matchB[2]);
+        if (idNumB !== idNumA) return idNumB - idNumA;
+    }
+
+    // 4. Fallback to position in entertainmentList
+    const idxA = entertainmentList.indexOf(a);
+    const idxB = entertainmentList.indexOf(b);
+    if (idxA !== -1 && idxB !== -1 && idxA !== idxB) {
+        return idxA - idxB;
+    }
+
+    return 0;
+}
+
 // Render Cards
 function render() {
     const grid = document.getElementById("grid-section");
@@ -1059,16 +1149,26 @@ function render() {
     const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     filtered.sort((a, b) => {
         if (sortFilter === "alpha") {
-            return a.title.localeCompare(b.title);
+            const cmp = a.title.localeCompare(b.title);
+            if (cmp !== 0) return cmp;
+            return compareItemsByCreation(a, b);
         }
         
         const dateWeightA = parseInt(a.year) * 12 + months.indexOf(a.month);
         const dateWeightB = parseInt(b.year) * 12 + months.indexOf(b.month);
 
         if (sortFilter === "newest") {
-            return dateWeightB - dateWeightA;
+            if (dateWeightB !== dateWeightA) {
+                return dateWeightB - dateWeightA;
+            }
+            // Same month and year: latest added game first!
+            return compareItemsByCreation(a, b);
         } else {
-            return dateWeightA - dateWeightB;
+            if (dateWeightA !== dateWeightB) {
+                return dateWeightA - dateWeightB;
+            }
+            // Oldest month first; within same month, oldest added first!
+            return -compareItemsByCreation(a, b);
         }
     });
 
@@ -1288,9 +1388,11 @@ function openModal(editItem = null) {
     }
 }
 
-closeModal.addEventListener("click", () => {
-    modal.style.display = "none";
-});
+if (closeModal) {
+    closeModal.addEventListener("click", () => {
+        if (modal) modal.style.display = "none";
+    });
+}
 
 window.addEventListener("click", (e) => {
     if (e.target === modal) {
@@ -1299,72 +1401,116 @@ window.addEventListener("click", (e) => {
 });
 
 // Form Submission Sync with Supabase
-document.getElementById("item-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    
-    const id = document.getElementById("item-id").value;
-    const title = document.getElementById("form-title").value;
-    const category = document.getElementById("form-category").value;
-    const rating = parseInt(document.getElementById("form-rating").value);
-    const month = document.getElementById("form-month").value;
-    const year = parseInt(document.getElementById("form-year").value);
-    const notes = document.getElementById("form-notes").value;
-    
-    let image = "";
-    if (uploadedImageBase64) {
-        image = uploadedImageBase64;
-    } else {
-        image = document.getElementById("form-image").value.trim();
-    }
-
-    const submitBtn = e.target.querySelector("button[type='submit']");
-    submitBtn.disabled = true;
-    submitBtn.innerText = "Saving...";
-
-    if (id) {
-        if (currentUser && currentUser.email === "demo@example.com" && !isAdminMode) {
-            showToast("This is a demo account. You can't delete or edit anything, please create a new account!", false);
-            submitBtn.disabled = false;
-            submitBtn.innerText = "Save Item";
-            modal.style.display = "none";
-            return;
+const itemForm = document.getElementById("item-form");
+if (itemForm) {
+    itemForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        
+        const id = document.getElementById("item-id").value;
+        const title = document.getElementById("form-title").value.trim();
+        const category = document.getElementById("form-category").value;
+        const rating = parseInt(document.getElementById("form-rating").value);
+        const month = document.getElementById("form-month").value;
+        const year = parseInt(document.getElementById("form-year").value);
+        const notes = document.getElementById("form-notes").value.trim();
+        
+        let image = "";
+        if (uploadedImageBase64) {
+            image = uploadedImageBase64;
+        } else {
+            image = document.getElementById("form-image").value.trim();
         }
 
-        const { error } = await supabaseClient
-            .from("vault_items")
-            .update({ title, category, rating, month, year, image, notes })
-            .eq("id", id)
-            .eq("user_id", currentUser.id);
+        const submitBtn = e.target.querySelector("button[type='submit']");
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerText = "Saving...";
+        }
 
-        if (error) {
-            alert("Error updating item: " + error.message);
+        if (id) {
+            if (currentUser && currentUser.email === "demo@example.com" && !isAdminMode) {
+                showToast("This is a demo account. You can't delete or edit anything, please create a new account!", false);
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = "Save Item";
+                }
+                modal.style.display = "none";
+                return;
+            }
+
+            let error = null;
+            if (currentUser) {
+                const res = await supabaseClient
+                    .from("vault_items")
+                    .update({ title, category, rating, month, year, image, notes })
+                    .eq("id", id)
+                    .eq("user_id", currentUser.id);
+                error = res.error;
+            }
+
+            if (error) {
+                showToast("Error updating item: " + error.message, false);
+            } else {
+                const idx = entertainmentList.findIndex(item => item.id === id);
+                if (idx !== -1) {
+                    const existing = entertainmentList[idx];
+                    entertainmentList[idx] = { 
+                        id, 
+                        user_id: currentUser ? currentUser.id : "local", 
+                        title, 
+                        category, 
+                        rating, 
+                        month, 
+                        year, 
+                        image, 
+                        notes,
+                        created_at: existing.created_at || new Date().toISOString()
+                    };
+                }
+            }
         } else {
-            const idx = entertainmentList.findIndex(item => item.id === id);
-            if (idx !== -1) {
-                entertainmentList[idx] = { id, user_id: currentUser.id, title, category, rating, month, year, image, notes };
+            const newId = Date.now().toString();
+            const createdAt = new Date().toISOString();
+            const newItem = { 
+                id: newId, 
+                user_id: currentUser ? currentUser.id : "local", 
+                title, 
+                category, 
+                rating, 
+                month, 
+                year, 
+                image, 
+                notes, 
+                created_at: createdAt 
+            };
+            
+            let error = null;
+            if (currentUser) {
+                const res = await supabaseClient
+                    .from("vault_items")
+                    .insert([newItem]);
+                error = res.error;
+            }
+
+            if (error) {
+                showToast("Error saving item: " + error.message, false);
+            } else {
+                // Store latest added game first
+                entertainmentList.unshift(newItem);
             }
         }
-    } else {
-        const newId = Date.now().toString();
-        const newItem = { id: newId, user_id: currentUser.id, title, category, rating, month, year, image, notes };
-        
-        const { error } = await supabaseClient
-            .from("vault_items")
-            .insert([newItem]);
 
-        if (error) {
-            alert("Error saving item: " + error.message);
-        } else {
-            entertainmentList.push(newItem);
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerText = "Save Item";
         }
-    }
-
-    submitBtn.disabled = false;
-    submitBtn.innerText = "Save Item";
-    modal.style.display = "none";
-    saveItemsToCache(currentUser.id, entertainmentList);
-    render();
-});
+        modal.style.display = "none";
+        if (currentUser) {
+            saveItemsToCache(currentUser.id, entertainmentList);
+        }
+        render();
+    });
+}
 
 // Event Listeners for Filters
 document.getElementById("search-input").addEventListener("input", render);
@@ -1375,8 +1521,10 @@ document.getElementById("sort-filter").addEventListener("change", render);
 document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.addEventListener("click", async (e) => {
         document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-        e.target.classList.add("active");
-        currentTab = e.target.getAttribute("data-tab");
+        const targetBtn = e.currentTarget || e.target.closest(".tab-btn");
+        if (!targetBtn) return;
+        targetBtn.classList.add("active");
+        currentTab = targetBtn.getAttribute("data-tab");
         applyThemeForTab(currentTab);
         if (currentTab === "news") {
             await loadNewsData();
@@ -1386,41 +1534,52 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     });
 });
 
-document.getElementById("add-btn").addEventListener("click", () => {
-    if (currentUser && currentUser.email === "demo@example.com" && !isAdminMode) {
-        showToast("This is a demo account. You can't delete or edit anything, please create a new account!", false);
-        return;
-    }
-    openModal();
-});
+const addBtn = document.getElementById("add-btn");
+if (addBtn) {
+    addBtn.addEventListener("click", () => {
+        if (currentUser && currentUser.email === "demo@example.com" && !isAdminMode) {
+            showToast("This is a demo account. You can't delete or edit anything, please create a new account!", false);
+            return;
+        }
+        openModal();
+    });
+}
 
 // Export JSON Utility (Client-side formatting)
-document.getElementById("export-btn").addEventListener("click", () => {
-    const cleanedList = entertainmentList.map(({ id, title, category, rating, month, year, image, notes }) => ({
-        id, title, category, rating, month, year, image, notes
-    }));
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(cleanedList, null, 4));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", "game_anime_vault_backup.json");
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
-});
+const exportBtn = document.getElementById("export-btn");
+if (exportBtn) {
+    exportBtn.addEventListener("click", () => {
+        const cleanedList = entertainmentList.map(({ id, title, category, rating, month, year, image, notes, created_at }) => ({
+            id, title, category, rating, month, year, image, notes, ...(created_at ? { created_at } : {})
+        }));
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(cleanedList, null, 4));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", "game_anime_vault_backup.json");
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+    });
+}
 
 // Import JSON Utility Sync with Supabase
 const fileInput = document.getElementById("import-file");
-document.getElementById("import-btn").addEventListener("click", () => {
-    if (currentUser && currentUser.email === "demo@example.com" && !isAdminMode) {
-        showToast("This is a demo account. You can't delete or edit anything, please create a new account!", false);
-        return;
-    }
-    fileInput.click();
-});
+const importBtn = document.getElementById("import-btn");
+if (importBtn && fileInput) {
+    importBtn.addEventListener("click", () => {
+        if (currentUser && currentUser.email === "demo@example.com" && !isAdminMode) {
+            showToast("This is a demo account. You can't delete or edit anything, please create a new account!", false);
+            return;
+        }
+        fileInput.value = "";
+        fileInput.click();
+    });
+}
 
-fileInput.addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+if (fileInput) {
+    fileInput.addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
 
     const reader = new FileReader();
     reader.onload = async function(evt) {
@@ -1436,7 +1595,7 @@ fileInput.addEventListener("change", async (e) => {
                         .eq("user_id", currentUser.id);
                     
                     if (deleteError) {
-                        alert("Error clearing database: " + deleteError.message);
+                        showToast("Error clearing database: " + deleteError.message, false);
                         return;
                     }
                     
@@ -1449,7 +1608,8 @@ fileInput.addEventListener("change", async (e) => {
                         month: item.month,
                         year: item.year,
                         image: item.image || "",
-                        notes: item.notes || ""
+                        notes: item.notes || "",
+                        created_at: item.created_at || new Date().toISOString()
                     }));
 
                     const { error: insertError } = await supabaseClient
@@ -1457,12 +1617,12 @@ fileInput.addEventListener("change", async (e) => {
                         .insert(itemsToInsert);
 
                     if (insertError) {
-                        alert("Error importing items: " + insertError.message);
+                        showToast("Error importing items: " + insertError.message, false);
                     } else {
                         entertainmentList = itemsToInsert;
                         saveItemsToCache(currentUser.id, entertainmentList);
                         render();
-                        alert("Import successful! All items written to cloud.");
+                        showToast("Import successful! All items written to cloud.");
                     }
                 } else {
                     const itemsToInsert = [];
@@ -1478,7 +1638,8 @@ fileInput.addEventListener("change", async (e) => {
                                 month: imp.month,
                                 year: imp.year,
                                 image: imp.image || "",
-                                notes: imp.notes || ""
+                                notes: imp.notes || "",
+                                created_at: imp.created_at || new Date().toISOString()
                             });
                         }
                     });
@@ -1489,26 +1650,28 @@ fileInput.addEventListener("change", async (e) => {
                             .insert(itemsToInsert);
 
                         if (insertError) {
-                            alert("Error merging items: " + insertError.message);
+                            showToast("Error merging items: " + insertError.message, false);
                         } else {
-                            entertainmentList.push(...itemsToInsert);
+                            entertainmentList.unshift(...itemsToInsert);
                             saveItemsToCache(currentUser.id, entertainmentList);
                             render();
-                            alert(`Merged ${itemsToInsert.length} new items into your database!`);
+                            showToast(`Merged ${itemsToInsert.length} new items into your vault!`);
                         }
                     } else {
-                        alert("No new items to merge.");
+                        showToast("No new items to merge — everything is already in your vault.", false);
                     }
                 }
             } else {
-                alert("Invalid format! Import must be a JSON array.");
+                showToast("Invalid format! Import file must be a JSON array.", false);
             }
         } catch (err) {
-            alert("Error parsing JSON file: " + err.message);
+            showToast("Error parsing JSON file: " + err.message, false);
         }
     };
     reader.readAsText(file);
-});
+    fileInput.value = "";
+    });
+}
 
 // Feedback Modal Handling & Form Submission (with Supabase sync & mailto fallback)
 const feedbackModal = document.getElementById("feedback-modal");
@@ -1647,14 +1810,21 @@ window.addEventListener("click", (e) => {
     }
 });
 
-document.getElementById("detail-edit-btn").addEventListener("click", () => {
-    const id = document.getElementById("detail-edit-btn").getAttribute("data-id");
-    const item = entertainmentList.find(item => item.id === id);
-    if (item) {
-        detailModal.style.display = "none";
-        openModal(item);
-    }
-});
+const detailEditBtn = document.getElementById("detail-edit-btn");
+if (detailEditBtn) {
+    detailEditBtn.addEventListener("click", () => {
+        if (currentUser && currentUser.email === "demo@example.com" && !isAdminMode) {
+            showToast("This is a demo account. You can't delete or edit anything, please create a new account!", false);
+            return;
+        }
+        const id = detailEditBtn.getAttribute("data-id");
+        const item = entertainmentList.find(item => item.id === id);
+        if (item) {
+            detailModal.style.display = "none";
+            openModal(item);
+        }
+    });
+}
 
 // Profile Settings Side Drawer & Metadata Updates
 const profileDrawer = document.getElementById("profile-drawer");
@@ -1756,6 +1926,7 @@ document.getElementById("profile-avatar-file").addEventListener("change", (e) =>
         img.src = event.target.result;
     };
     reader.readAsDataURL(file);
+    e.target.value = "";
 });
 
 // Profile Settings Form Submission
@@ -1860,11 +2031,15 @@ if (deleteConfirmBtn) {
         deleteConfirmBtn.disabled = true;
         deleteConfirmBtn.innerText = "Deleting...";
 
-        const { error } = await supabaseClient
-            .from("vault_items")
-            .delete()
-            .eq("id", itemToDeleteId)
-            .eq("user_id", currentUser.id);
+        let error = null;
+        if (currentUser) {
+            const res = await supabaseClient
+                .from("vault_items")
+                .delete()
+                .eq("id", itemToDeleteId)
+                .eq("user_id", currentUser.id);
+            error = res.error;
+        }
 
         deleteConfirmBtn.disabled = false;
         deleteConfirmBtn.innerText = "Yes, Delete";
@@ -1874,7 +2049,9 @@ if (deleteConfirmBtn) {
             showToast("Error deleting item: " + error.message, false);
         } else {
             entertainmentList = entertainmentList.filter(item => item.id !== itemToDeleteId);
-            saveItemsToCache(currentUser.id, entertainmentList);
+            if (currentUser) {
+                saveItemsToCache(currentUser.id, entertainmentList);
+            }
             itemToDeleteId = null;
             render();
             showToast("Item deleted successfully.");

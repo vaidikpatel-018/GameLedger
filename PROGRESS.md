@@ -67,5 +67,14 @@
 - [x] **Authentication & UX Enhancements**:
   - [x] Added password visibility toggle button with eye open/close SVG icons in login, signup, and reset password views
   - [x] Enabled login using either email address or username with automatic mapping and local caching
+  - [x] Implemented same-month chronological tie-breaker sorting so latest added games/anime are listed first
+  - [x] Solved page reload on login, signup, password reset, and logout: triggers clean browser reload like standard web apps, while preserving 0ms instant startup via local cache
+  - [x] Comprehensive button and interactive bug audit:
+    - Fixed Restore Vault (`#import-btn`) file picker re-selection by resetting `fileInput.value`
+    - Fixed Profile Avatar photo picker re-selection by resetting `e.target.value`
+    - Added demo account protection to Detail Modal "Edit Details" button
+    - Fixed null-safety when deleting/updating items if user session is local or pending
+    - Fixed `auth-toggle-link` mode switching when cancelling password recovery
+    - Expanded year filters and form select inputs to cover 2022-2027
 - [x] Local testing & code review
 - [x] Git commit & push to `origin/main`

@@ -213,7 +213,7 @@ header .container {
 .search-box input:focus {
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 10px rgba(168, 85, 247, 0.2);
+    box-shadow: 0 0 10px var(--accent-glow);
 }
 
 .filters {
@@ -402,6 +402,8 @@ header .container {
     border-radius: 16px;
     width: 90%;
     max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
     padding: 30px;
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
     position: relative;
@@ -494,9 +496,9 @@ footer {
     border-top: 1px solid var(--border-color);
     padding: 20px 0;
     background: var(--bg-color);
-    position: absolute;
-    bottom: 0;
+    position: relative;
     width: 100%;
+    margin-top: auto;
 }
 
 .footer-container {
@@ -591,6 +593,43 @@ footer {
     .form-row {
         flex-direction: column;
         gap: 0;
+    }
+    /* Reduce card grid to 2 columns on tablet */
+    .grid-container {
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    /* Single column grid on phones */
+    .grid-container {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+    /* Reduce card fixed height on phones so content fits */
+    .card {
+        height: auto;
+        min-height: 340px;
+    }
+    /* Ensure auth card isn't cramped on small phones */
+    .auth-card {
+        padding: 20px 16px;
+    }
+    /* Fit header logo and buttons on tiny screens */
+    .logo h1 {
+        font-size: 18px;
+    }
+    .btn {
+        font-size: 13px;
+        padding: 8px 12px;
+    }
+    /* Toast shouldn't overflow on narrow screens */
+    .custom-toast {
+        bottom: 16px;
+        right: 16px;
+        left: 16px;
+        max-width: calc(100vw - 32px);
     }
 }
 
