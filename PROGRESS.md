@@ -1,8 +1,8 @@
 # Development Log & Progress Tracker
 
 > **Project:** GameLedger  
-> **Location:** `C:\Projects learning spectro\game-anime-vault`  
-> **Repository:** `https://github.com/vaidikpatel-018/gameledger.git` (`main` branch)  
+> **Live Site:** `https://thegameledger.vercel.app`  
+> **Repository:** `https://github.com/vaidikpatel-018/GameLedger.git` (`main` branch)  
 > **Stack:** Vanilla HTML5, CSS3 (Glassmorphism), JavaScript (ES6+), Supabase Client SDK  
 
 ---

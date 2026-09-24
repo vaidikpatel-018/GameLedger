@@ -2,6 +2,10 @@
 
 A premium, interactive web dashboard to manage, review, and show off your gaming achievements and game log records.
 
+> **Live Deployment:** [https://thegameledger.vercel.app](https://thegameledger.vercel.app)  
+> **GitHub Pages Mirror:** [https://vaidikpatel-018.github.io/GameLedger/](https://vaidikpatel-018.github.io/GameLedger/)  
+> **Repository:** [https://github.com/vaidikpatel-018/GameLedger](https://github.com/vaidikpatel-018/GameLedger)  
+
 This is a local-first single-page application built using HTML5, Vanilla CSS (Glassmorphism), and modern JavaScript, with Supabase cloud database synchronization and offline-first client caching.
 
 ---
