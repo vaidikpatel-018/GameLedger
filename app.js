@@ -265,6 +265,9 @@ let currentTab = "games";
 let entertainmentList = [];
 let currentUser = null;
 let authMode = "login"; // "login" or "signup"
+let newsList = [];
+let isNewsLoading = false;
+let itemToDeleteId = null;
 
 // Local Cache Synchronization Utilities (Instant 0ms App Startup)
 function saveUserToCache(user) {
@@ -490,7 +493,7 @@ function setAuthMode(mode) {
     if (eyeIconHide) eyeIconHide.style.display = "none";
     
     if (authMode === "login") {
-        subtitle.innerText = "Log in to manage your private gaming logs & watch lists";
+        subtitle.innerText = "Log in to manage your private gaming logs & reviews";
         submitBtn.innerText = "Log In";
         usernameGroup.style.display = "none";
         authUsernameInput.removeAttribute("required");
@@ -951,10 +954,6 @@ function renderStars(rating) {
     }
     return html;
 }
-
-let newsList = [];
-let isNewsLoading = false;
-let itemToDeleteId = null;
 
 function applyThemeForTab(tab) {
     const root = document.documentElement;
