@@ -1,8 +1,8 @@
 # Development Log & Progress Tracker
 
-> **Project:** Game & Anime Vault  
+> **Project:** GameLedger  
 > **Location:** `C:\Projects learning spectro\game-anime-vault`  
-> **Repository:** `https://github.com/vaidikpatel-018/game-anime-vault.git` (`main` branch)  
+> **Repository:** `https://github.com/vaidikpatel-018/gameledger.git` (`main` branch)  
 > **Stack:** Vanilla HTML5, CSS3 (Glassmorphism), JavaScript (ES6+), Supabase Client SDK  
 
 ---
@@ -11,8 +11,8 @@
 
 ### 1. File Structure
 * **[`index.html`](file:///C:/Projects%20learning%20spectro/game-anime-vault/index.html)**:
-  * SPA layout with navigation tabs (`Games`, `Anime`, `News`).
-  * Modals: Add/Edit Item Modal, Item Detail Modal, Custom Delete Confirmation Modal (`#delete-confirm-modal`), Feedback Modal, Auth Screen Modal.
+  * SPA layout with navigation tabs (`Games`, `News`).
+  * Modals: Add/Edit Game Modal, Item Detail Modal, Custom Delete Confirmation Modal (`#delete-confirm-modal`), Feedback Modal, Auth Screen Modal.
   * Profile Drawer (`#profile-drawer`) with avatar preview and username editing.
   * Search, Year Filter, and Sorting controls.
 * **[`style.css`](file:///C:/Projects%20learning%20spectro/game-anime-vault/style.css)**:
@@ -68,7 +68,6 @@
   - [x] Added password visibility toggle button with eye open/close SVG icons in login, signup, and reset password views
   - [x] Enabled login using either email address or username with automatic mapping and local caching
   - [x] Implemented same-month chronological tie-breaker sorting so latest added games/anime are listed first
-  - [x] Solved page reload on login, signup, password reset, and logout: triggers clean browser reload like standard web apps, while preserving 0ms instant startup via local cache
   - [x] Comprehensive button and interactive bug audit:
     - Fixed Restore Vault (`#import-btn`) file picker re-selection by resetting `fileInput.value`
     - Fixed Profile Avatar photo picker re-selection by resetting `e.target.value`
@@ -76,5 +75,16 @@
     - Fixed null-safety when deleting/updating items if user session is local or pending
     - Fixed `auth-toggle-link` mode switching when cancelling password recovery
     - Expanded year filters and form select inputs to cover 2022-2027
+  - [x] Pure SPA State Transitions & Auth Architecture:
+    - Replaced hard `window.location.reload()` calls with `transitionToLoggedIn()` and `transitionToLoggedOut()`
+    - Eliminated white/black flashes and race conditions between form submit and Supabase `onAuthStateChange`
+    - Preserved external event support (session expiry, multi-tab logout, token refresh, password recovery)
+    - Full DOM sanitation on logout (cards, stats, modals, header avatar)
+    - Instant 0ms startup via local cache and seamless background cloud sync
+- [x] **GameLedger Rebrand & Complete Anime Removal**:
+  - Rebranded application completely across UI, headers, modals, auth screens, and docs to `GameLedger`
+  - Completely purged the Anime section: removed Anime tab, Anime Tracker badges, and `defaultAnime` data
+  - Sanitized database loading: automatically deletes legacy anime records from user accounts in Supabase
+  - Sanitized local cache & backup import: filters out legacy anime records so they never render
 - [x] Local testing & code review
-- [x] Git commit & push to `origin/main`
+

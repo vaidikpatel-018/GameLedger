@@ -6,7 +6,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // Admin bypass check for demo account (can be enabled via browser console: localStorage.setItem("demo_admin", "true"))
 const isAdminMode = localStorage.getItem("demo_admin") === "true";
 
-// Default Game and Anime data templates (poster-enriched defaults)
+// Default Game data templates (poster-enriched defaults)
 const defaultGames = [
     {
         "id": "g1",
@@ -260,67 +260,11 @@ const defaultGames = [
     }
 ];
 
-const defaultAnime = [
-    {
-        "id": "a1",
-        "title": "Death Note",
-        "category": "anime",
-        "rating": 5,
-        "month": "January",
-        "year": 2024,
-        "image": "",
-        "notes": "Masterpiece psychological battle between Light and L. (Example)"
-    },
-    {
-        "id": "a2",
-        "title": "Attack on Titan",
-        "category": "anime",
-        "rating": 5,
-        "month": "March",
-        "year": 2024,
-        "image": "",
-        "notes": "Epic story about humanity fighting giant titans. (Example)"
-    },
-    {
-        "id": "a3",
-        "title": "Demon Slayer",
-        "category": "anime",
-        "rating": 4,
-        "month": "June",
-        "year": 2024,
-        "image": "",
-        "notes": "Beautiful animations and great action sequences. (Example)"
-    },
-    {
-        "id": "a4",
-        "title": "Jujutsu Kaisen",
-        "category": "anime",
-        "rating": 4,
-        "month": "October",
-        "year": 2025,
-        "image": "",
-        "notes": "Superb curse battles and unforgettable characters. (Example)"
-    },
-    {
-        "id": "a5",
-        "title": "Naruto: Shippuden",
-        "category": "anime",
-        "rating": 5,
-        "month": "January",
-        "year": 2026,
-        "image": "",
-        "notes": "An emotional journey of a ninja seeking recognition. (Example)"
-    }
-];
-
 // App State
 let currentTab = "games";
 let entertainmentList = [];
 let currentUser = null;
 let authMode = "login"; // "login" or "signup"
-// Flag: set true when the login/signup form handler already called showAppScreen+loadUserData
-// so onAuthStateChange SIGNED_IN doesn't redundantly fire them again.
-let authHandledByForm = false;
 
 // Local Cache Synchronization Utilities (Instant 0ms App Startup)
 function saveUserToCache(user) {
@@ -341,7 +285,8 @@ function clearUserCache() {
 function saveItemsToCache(userId, items) {
     if (!userId || !Array.isArray(items)) return;
     try {
-        localStorage.setItem("vault_cached_items_" + userId, JSON.stringify(items));
+        const cleanItems = items.filter(item => item.category !== "anime");
+        localStorage.setItem("vault_cached_items_" + userId, JSON.stringify(cleanItems));
     } catch (e) {
         console.warn("Could not cache items:", e);
     }
@@ -351,7 +296,9 @@ function getCachedItems(userId) {
     if (!userId) return [];
     try {
         const str = localStorage.getItem("vault_cached_items_" + userId);
-        return str ? JSON.parse(str) : [];
+        if (!str) return [];
+        const parsed = JSON.parse(str);
+        return Array.isArray(parsed) ? parsed.filter(item => item.category !== "anime") : [];
     } catch (e) {
         return [];
     }
@@ -385,30 +332,131 @@ function registerUsernameMapping(username, email) {
     }
 }
 
-// Auth Screen Toggling
-function showAuthScreen() {
-    document.documentElement.classList.remove("auth-logged-in");
-    document.documentElement.classList.add("auth-logged-out");
-    const appContainer = document.getElementById("app-container");
-    const authContainer = document.getElementById("auth-container");
-    if (appContainer) appContainer.style.display = "none";
-    if (authContainer) authContainer.style.display = "flex";
-    const authError = document.getElementById("auth-error-msg");
-    if (authError) authError.style.display = "none";
-    const authForm = document.getElementById("auth-form");
-    if (authForm) authForm.reset();
-    setAuthMode("login");
-}
+// Centralized SPA State Transitions
+function transitionToLoggedIn(user, options = {}) {
+    if (!user) return;
 
-function showAppScreen(user) {
+    // Check if we are already in the logged-in state for this exact user
+    const isAlreadyLoggedInThisUser = currentUser && currentUser.id === user.id &&
+        document.documentElement.classList.contains("auth-logged-in") &&
+        document.getElementById("auth-container")?.style.display === "none";
+
+    currentUser = user;
+    saveUserToCache(currentUser);
+
+    // Switch View Visibility cleanly
     document.documentElement.classList.remove("auth-logged-out");
     document.documentElement.classList.add("auth-logged-in");
+
     const appContainer = document.getElementById("app-container");
     const authContainer = document.getElementById("auth-container");
     if (authContainer) authContainer.style.display = "none";
     if (appContainer) appContainer.style.display = "block";
-    updateUserProfileUI(user);
+
+    // Clean up auth form inputs & state
+    const authForm = document.getElementById("auth-form");
+    if (authForm) authForm.reset();
+    const authError = document.getElementById("auth-error-msg");
+    if (authError) authError.style.display = "none";
+    const submitBtn = document.getElementById("auth-submit-btn");
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerText = "Log In";
+    }
+
+    // Update Header Avatar & Profile Drawer UI
+    updateUserProfileUI(currentUser);
+
+    // Apply Tab Theme
     applyThemeForTab(currentTab);
+
+    // If already initialized in memory for this user, avoid wiping or redundant rendering
+    if (isAlreadyLoggedInThisUser && entertainmentList.length > 0) {
+        if (!options.skipCloudSync) {
+            loadUserData();
+        }
+        return;
+    }
+
+    // Hydrate cached items for 0ms instant display
+    const cachedItems = getCachedItems(currentUser.id);
+    if (cachedItems && cachedItems.length > 0) {
+        entertainmentList = cachedItems;
+        render();
+    } else {
+        entertainmentList = [];
+        render();
+    }
+
+    // Fetch latest user data from cloud in background without blocking UI
+    if (!options.skipCloudSync) {
+        loadUserData();
+    }
+}
+
+function transitionToLoggedOut(options = {}) {
+    // Close Profile Drawer if open
+    const profileDrawer = document.getElementById("profile-drawer");
+    if (profileDrawer) profileDrawer.classList.remove("open");
+
+    // Close all open modals to prevent orphaned overlays
+    const modals = document.querySelectorAll(".modal");
+    modals.forEach(m => m.style.display = "none");
+
+    // Clear In-Memory Protected State
+    currentUser = null;
+    entertainmentList = [];
+    newsList = [];
+    itemToDeleteId = null;
+
+    // Clear Local Storage Auth Cache
+    clearUserCache();
+
+    // Sanitize Protected Content in DOM
+    const grid = document.getElementById("grid-section");
+    if (grid) grid.innerHTML = "";
+    const statsSummary = document.getElementById("stats-summary");
+    if (statsSummary) statsSummary.innerHTML = "";
+    const headerAvatar = document.getElementById("header-avatar");
+    const headerAvatarFallback = document.getElementById("header-avatar-fallback");
+    if (headerAvatar) {
+        headerAvatar.src = "";
+        headerAvatar.style.display = "none";
+    }
+    if (headerAvatarFallback) {
+        headerAvatarFallback.style.display = "flex";
+        headerAvatarFallback.innerText = "U";
+    }
+
+    // Switch View Visibility cleanly
+    document.documentElement.classList.remove("auth-logged-in");
+    document.documentElement.classList.add("auth-logged-out");
+
+    const appContainer = document.getElementById("app-container");
+    const authContainer = document.getElementById("auth-container");
+    if (appContainer) appContainer.style.display = "none";
+    if (authContainer) authContainer.style.display = "flex";
+
+    // Reset Auth Form
+    const authError = document.getElementById("auth-error-msg");
+    if (authError) authError.style.display = "none";
+    const authForm = document.getElementById("auth-form");
+    if (authForm) authForm.reset();
+    const submitBtn = document.getElementById("auth-submit-btn");
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerText = "Log In";
+    }
+    setAuthMode("login");
+}
+
+// Backward-compatibility aliases
+function showAuthScreen() {
+    transitionToLoggedOut();
+}
+
+function showAppScreen(user) {
+    transitionToLoggedIn(user);
 }
 
 function setAuthMode(mode) {
@@ -635,18 +683,16 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
             submitBtn.innerText = "Log In";
             submitBtn.disabled = false;
             if (data && data.user) {
-                currentUser = data.user;
-                saveUserToCache(currentUser);
-                const metaUsername = currentUser.user_metadata?.username;
+                const metaUsername = data.user.user_metadata?.username;
                 if (metaUsername) {
-                    registerUsernameMapping(metaUsername, currentUser.email);
+                    registerUsernameMapping(metaUsername, data.user.email);
                 }
                 if (!rawIdentifier.includes("@")) {
-                    registerUsernameMapping(rawIdentifier, currentUser.email);
+                    registerUsernameMapping(rawIdentifier, data.user.email);
                 }
                 
-                // Clean browser reload into the user dashboard
-                window.location.reload();
+                transitionToLoggedIn(data.user);
+                showToast("Welcome back!");
             }
         }
     } else if (authMode === "signup") {
@@ -673,10 +719,8 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
             submitBtn.disabled = false;
             registerUsernameMapping(username, rawIdentifier);
             if (data && data.user) {
-                currentUser = data.user;
-                saveUserToCache(currentUser);
-                // Clean browser reload into the user dashboard
-                window.location.reload();
+                transitionToLoggedIn(data.user);
+                showToast("Account created successfully! You are now logged in.");
             } else {
                 showToast("Account created successfully! Please check your email or log in.");
                 setAuthMode("login");
@@ -711,16 +755,15 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
             submitBtn.innerText = "Update Password";
             submitBtn.disabled = false;
         } else {
-            showToast("Your password has been updated successfully!");
+            submitBtn.innerText = "Update Password";
             submitBtn.disabled = false;
-            authMode = "login"; // reset mode
+            setAuthMode("login");
             const { data: { user } } = await supabaseClient.auth.getUser();
             if (user) {
-                currentUser = user;
-                saveUserToCache(user);
-                window.location.reload();
+                transitionToLoggedIn(user);
+                showToast("Your password has been updated successfully!");
             } else {
-                setAuthMode("login");
+                transitionToLoggedOut();
             }
         }
     }
@@ -729,17 +772,16 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
 document.getElementById("profile-logout-btn").addEventListener("click", async () => {
     const profileDrawer = document.getElementById("profile-drawer");
     if (profileDrawer) profileDrawer.classList.remove("open");
-    // Clear local cache BEFORE signOut so the reloaded page displays the auth screen cleanly
-    clearUserCache();
-    currentUser = null;
-    entertainmentList = [];
+    
+    // Clean SPA transition to logged-out state
+    transitionToLoggedOut();
+    showToast("Logged out successfully.");
+
     try {
         await supabaseClient.auth.signOut();
     } catch (e) {
         console.warn("Sign out error:", e);
     }
-    // Clean browser reload into the auth screen
-    window.location.reload();
 });
 
 // Instant Local-First Hydration (0ms Startup)
@@ -748,62 +790,65 @@ function initLocalCache() {
         const cachedUserStr = localStorage.getItem("vault_cached_user");
         if (cachedUserStr) {
             currentUser = JSON.parse(cachedUserStr);
-            showAppScreen(currentUser);
-            
-            const cachedItems = getCachedItems(currentUser.id);
-            if (cachedItems && cachedItems.length > 0) {
-                entertainmentList = cachedItems;
-                render();
-            }
+            transitionToLoggedIn(currentUser, { isStartup: true });
         } else {
-            showAuthScreen();
+            transitionToLoggedOut({ isStartup: true });
         }
     } catch (e) {
         console.error("Local cache hydration error:", e);
+        transitionToLoggedOut({ isStartup: true });
     }
 }
 initLocalCache();
 
 // Listen for Auth Changes (Background Session Sync)
 supabaseClient.auth.onAuthStateChange(async (event, session) => {
-    console.log("Auth State Changed Event:", event);
-
-    // Skip the initial session event — initLocalCache() already handles startup rendering.
-    // Letting INITIAL_SESSION through causes double loadUserData() calls and race conditions.
-    if (event === "INITIAL_SESSION") return;
+    console.log("Auth State Changed Event:", event, session ? session.user.id : null);
 
     if (event === "PASSWORD_RECOVERY") {
         currentUser = session ? session.user : null;
-        document.getElementById("app-container").style.display = "none";
-        document.getElementById("auth-container").style.display = "flex";
+        document.documentElement.classList.remove("auth-logged-in");
+        document.documentElement.classList.add("auth-logged-out");
+        const appContainer = document.getElementById("app-container");
+        const authContainer = document.getElementById("auth-container");
+        if (appContainer) appContainer.style.display = "none";
+        if (authContainer) authContainer.style.display = "flex";
         setAuthMode("reset_password");
-    } else if (event === "SIGNED_OUT") {
-        if (localStorage.getItem("vault_cached_user") || currentUser) {
-            clearUserCache();
-            currentUser = null;
-            entertainmentList = [];
-            window.location.reload();
-        } else {
-            showAuthScreen();
+        return;
+    }
+
+    if (event === "SIGNED_OUT") {
+        // Legitimate sign out: triggered by user logout, session expiry, or cross-tab sign out
+        if (currentUser || localStorage.getItem("vault_cached_user")) {
+            transitionToLoggedOut();
         }
-    } else if (session) {
+        return;
+    }
+
+    if (session && session.user) {
         if (authMode === "reset_password") {
             currentUser = session.user;
             return;
         }
-        if (!currentUser || currentUser.id !== session.user.id) {
+
+        // If user is already active and logged in as this exact user:
+        if (currentUser && currentUser.id === session.user.id) {
             currentUser = session.user;
             saveUserToCache(currentUser);
-            window.location.reload();
+            // On startup or token refresh, sync user items with cloud
+            if (event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") {
+                loadUserData();
+            }
             return;
         }
-        showAppScreen(currentUser);
-        await loadUserData();
+
+        // Fresh login, user switch, or session restore from external tab
+        transitionToLoggedIn(session.user);
     } else {
-        clearUserCache();
-        currentUser = null;
-        entertainmentList = [];
-        showAuthScreen();
+        // No session: if user is in memory or cache, session is no longer valid
+        if (currentUser || localStorage.getItem("vault_cached_user")) {
+            transitionToLoggedOut();
+        }
     }
 });
 
@@ -820,8 +865,24 @@ async function loadUserData() {
         return;
     }
 
-    if (data && data.length > 0) {
-        entertainmentList = data;
+    // Automatically purge any remaining anime items from the cloud database
+    const hasAnimeInCloud = data && data.some(item => item.category === "anime");
+    if (hasAnimeInCloud) {
+        try {
+            await supabaseClient
+                .from("vault_items")
+                .delete()
+                .eq("category", "anime")
+                .eq("user_id", currentUser.id);
+        } catch (delErr) {
+            console.warn("Could not purge anime items from cloud:", delErr);
+        }
+    }
+
+    const cleanData = (data || []).filter(item => item.category !== "anime");
+
+    if (cleanData.length > 0) {
+        entertainmentList = cleanData;
         saveItemsToCache(currentUser.id, entertainmentList);
         render();
     } else {
@@ -835,11 +896,11 @@ async function loadUserData() {
 
         if (shouldPopulate) {
             console.log("Empty database for authorized account, initializing defaults...");
-            const defaults = [...defaultGames, ...defaultAnime].map(item => ({
+            const defaults = defaultGames.map(item => ({
                 id: item.id,
                 user_id: currentUser.id,
                 title: item.title,
-                category: item.category,
+                category: "games",
                 rating: item.rating,
                 month: item.month,
                 year: item.year,
@@ -897,29 +958,7 @@ let itemToDeleteId = null;
 
 function applyThemeForTab(tab) {
     const root = document.documentElement;
-    if (tab === "games") {
-        root.style.setProperty('--bg-color', '#090809');
-        root.style.setProperty('--card-bg', 'rgba(22, 20, 21, 0.65)');
-        root.style.setProperty('--border-color', 'rgba(191, 59, 87, 0.15)');
-        root.style.setProperty('--accent-color', '#bf3b57');
-        root.style.setProperty('--accent-glow', 'rgba(191, 59, 87, 0.15)');
-        root.style.setProperty('--btn-text-color', '#ffffff');
-        root.style.setProperty('--text-secondary', '#9ca3af');
-        root.style.setProperty('--glow-color', 'rgba(191, 59, 87, 0.12)');
-        document.body.style.background = 'radial-gradient(ellipse at 50% -20%, #1f0f13 0%, #090809 80%)';
-        document.body.style.backgroundAttachment = 'fixed';
-    } else if (tab === "anime") {
-        root.style.setProperty('--bg-color', '#07060a');
-        root.style.setProperty('--card-bg', 'rgba(20, 18, 25, 0.65)');
-        root.style.setProperty('--border-color', 'rgba(122, 102, 179, 0.15)');
-        root.style.setProperty('--accent-color', '#7a66b3');
-        root.style.setProperty('--accent-glow', 'rgba(122, 102, 179, 0.15)');
-        root.style.setProperty('--btn-text-color', '#ffffff');
-        root.style.setProperty('--text-secondary', '#9ca3af');
-        root.style.setProperty('--glow-color', 'rgba(122, 102, 179, 0.12)');
-        document.body.style.background = 'radial-gradient(ellipse at 50% -20%, #100d1c 0%, #06050a 80%)';
-        document.body.style.backgroundAttachment = 'fixed';
-    } else if (tab === "news") {
+    if (tab === "news") {
         root.style.setProperty('--bg-color', '#08090a');
         root.style.setProperty('--card-bg', 'rgba(24, 27, 30, 0.65)');
         root.style.setProperty('--border-color', 'rgba(107, 130, 150, 0.15)');
@@ -929,6 +968,18 @@ function applyThemeForTab(tab) {
         root.style.setProperty('--text-secondary', '#9ca3af');
         root.style.setProperty('--glow-color', 'rgba(107, 130, 150, 0.12)');
         document.body.style.background = 'radial-gradient(ellipse at 50% -20%, #11161b 0%, #07080a 80%)';
+        document.body.style.backgroundAttachment = 'fixed';
+    } else {
+        // Default: games tab theme
+        root.style.setProperty('--bg-color', '#090809');
+        root.style.setProperty('--card-bg', 'rgba(22, 20, 21, 0.65)');
+        root.style.setProperty('--border-color', 'rgba(191, 59, 87, 0.15)');
+        root.style.setProperty('--accent-color', '#bf3b57');
+        root.style.setProperty('--accent-glow', 'rgba(191, 59, 87, 0.15)');
+        root.style.setProperty('--btn-text-color', '#ffffff');
+        root.style.setProperty('--text-secondary', '#9ca3af');
+        root.style.setProperty('--glow-color', 'rgba(191, 59, 87, 0.12)');
+        document.body.style.background = 'radial-gradient(ellipse at 50% -20%, #1f0f13 0%, #090809 80%)';
         document.body.style.backgroundAttachment = 'fixed';
     }
 }
@@ -1141,8 +1192,7 @@ function render() {
     const statsSummary = document.getElementById("stats-summary");
     if (statsSummary) {
         statsSummary.style.display = "block";
-        const categoryLabel = currentTab === "games" ? "Games" : "Anime Series";
-        statsSummary.innerHTML = `Total ${categoryLabel}: <span style="color: var(--accent-color); font-weight: 800;">${filtered.length}</span>`;
+        statsSummary.innerHTML = `Total Games: <span style="color: var(--accent-color); font-weight: 800;">${filtered.length}</span>`;
     }
 
     // Sorting
@@ -1230,8 +1280,8 @@ function render() {
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                 </svg>
             </div>
-            <h3>Your Vault is empty</h3>
-            <p>You haven't logged any ${currentTab === 'games' ? 'games' : 'anime series'} for the selected filters. Let's create your first record!</p>
+            <h3>Your Ledger is empty</h3>
+            <p>You haven't logged any games for the selected filters. Let's create your first record!</p>
             <button class="btn btn-primary" onclick="document.getElementById('add-btn').click()">+ Add First Log</button>
         `;
         grid.appendChild(placeholder);
@@ -1366,10 +1416,11 @@ function openModal(editItem = null) {
     updatePreview("");
 
     if (editItem) {
-        document.getElementById("modal-title").innerText = "Edit Item";
+        document.getElementById("modal-title").innerText = "Edit Game";
         document.getElementById("item-id").value = editItem.id;
         document.getElementById("form-title").value = editItem.title;
-        document.getElementById("form-category").value = editItem.category;
+        const catElem = document.getElementById("form-category");
+        if (catElem) catElem.value = "games";
         document.getElementById("form-rating").value = editItem.rating;
         document.getElementById("form-month").value = editItem.month;
         document.getElementById("form-year").value = editItem.year.toString();
@@ -1382,9 +1433,10 @@ function openModal(editItem = null) {
             updatePreview(editItem.image);
         }
     } else {
-        document.getElementById("modal-title").innerText = "Add New Item";
+        document.getElementById("modal-title").innerText = "Add New Game";
         document.getElementById("item-id").value = "";
-        document.getElementById("form-category").value = currentTab;
+        const catElem = document.getElementById("form-category");
+        if (catElem) catElem.value = "games";
     }
 }
 
@@ -1549,13 +1601,15 @@ if (addBtn) {
 const exportBtn = document.getElementById("export-btn");
 if (exportBtn) {
     exportBtn.addEventListener("click", () => {
-        const cleanedList = entertainmentList.map(({ id, title, category, rating, month, year, image, notes, created_at }) => ({
-            id, title, category, rating, month, year, image, notes, ...(created_at ? { created_at } : {})
-        }));
+        const cleanedList = entertainmentList
+            .filter(item => item.category !== "anime")
+            .map(({ id, title, category, rating, month, year, image, notes, created_at }) => ({
+                id, title, category: "games", rating, month, year, image, notes, ...(created_at ? { created_at } : {})
+            }));
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(cleanedList, null, 4));
         const downloadAnchor = document.createElement('a');
         downloadAnchor.setAttribute("href", dataStr);
-        downloadAnchor.setAttribute("download", "game_anime_vault_backup.json");
+        downloadAnchor.setAttribute("download", "gameledger_backup.json");
         document.body.appendChild(downloadAnchor);
         downloadAnchor.click();
         downloadAnchor.remove();
@@ -1584,8 +1638,10 @@ if (fileInput) {
     const reader = new FileReader();
     reader.onload = async function(evt) {
         try {
-            const imported = JSON.parse(evt.target.result);
-            if (Array.isArray(imported)) {
+            const rawImported = JSON.parse(evt.target.result);
+            if (Array.isArray(rawImported)) {
+                // Filter out any legacy anime items from import
+                const imported = rawImported.filter(item => item && item.category !== "anime");
                 const confirmOverwrite = confirm("Do you want to overwrite your current database list? Click OK to overwrite, or Cancel to merge imported items.");
                 
                 if (confirmOverwrite) {
@@ -1600,10 +1656,10 @@ if (fileInput) {
                     }
                     
                     const itemsToInsert = imported.map(item => ({
-                        id: item.id.startsWith("g") || item.id.startsWith("a") ? item.id + "_" + currentUser.id.substring(0, 5) : item.id,
+                        id: item.id.startsWith("g") ? item.id + "_" + currentUser.id.substring(0, 5) : item.id,
                         user_id: currentUser.id,
                         title: item.title,
-                        category: item.category,
+                        category: "games",
                         rating: item.rating,
                         month: item.month,
                         year: item.year,
@@ -1627,13 +1683,13 @@ if (fileInput) {
                 } else {
                     const itemsToInsert = [];
                     imported.forEach(imp => {
-                        if (!entertainmentList.some(item => item.title.toLowerCase() === imp.title.toLowerCase() && item.category === imp.category)) {
+                        if (!entertainmentList.some(item => item.title.toLowerCase() === imp.title.toLowerCase())) {
                             const newId = "imp_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
                             itemsToInsert.push({
                                 id: newId,
                                 user_id: currentUser.id,
                                 title: imp.title,
-                                category: imp.category,
+                                category: "games",
                                 rating: imp.rating,
                                 month: imp.month,
                                 year: imp.year,
@@ -1655,10 +1711,10 @@ if (fileInput) {
                             entertainmentList.unshift(...itemsToInsert);
                             saveItemsToCache(currentUser.id, entertainmentList);
                             render();
-                            showToast(`Merged ${itemsToInsert.length} new items into your vault!`);
+                            showToast(`Merged ${itemsToInsert.length} new games into your ledger!`);
                         }
                     } else {
-                        showToast("No new items to merge — everything is already in your vault.", false);
+                        showToast("No new items to merge — everything is already in your ledger.", false);
                     }
                 }
             } else {
@@ -1770,7 +1826,7 @@ const detailCloseBtn = document.getElementById("detail-close-btn");
 function openDetailModal(item) {
     document.getElementById("detail-title").innerText = item.title;
     document.getElementById("detail-rating").innerHTML = renderStars(item.rating);
-    document.getElementById("detail-category-badge").innerText = item.category === "games" ? "Game" : "Anime";
+    document.getElementById("detail-category-badge").innerText = "Game";
     document.getElementById("detail-date-badge").innerText = `${item.month} ${item.year}`;
     document.getElementById("detail-notes").innerText = item.notes || "No review notes written yet.";
     

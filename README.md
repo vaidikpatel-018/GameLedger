@@ -1,39 +1,39 @@
-# 🚀 Vaidik's Game & Anime Vault Tracker
+# GameLedger
 
-A premium, interactive web dashboard to manage, filter, and show off your gaming logs and anime watch lists. 
+A premium, interactive web dashboard to manage, review, and show off your gaming achievements and game log records.
 
-This is a local-first single-page application built using HTML5, Vanilla CSS, and modern Javascript. It stores your data inside your browser's local storage (so it persists even if you reload or close the page), and has full **Import/Export JSON** features to keep your lists backed up.
-
----
-
-## 💻 How to Run Locally
-
-You can open the project on your laptop immediately without installing anything:
-1. Double-click the file [index.html](file:///C:/Users/patel/game-anime-vault/index.html) in your file explorer.
-2. It will open directly in Google Chrome, Brave, or any web browser!
+This is a local-first single-page application built using HTML5, Vanilla CSS (Glassmorphism), and modern JavaScript, with Supabase cloud database synchronization and offline-first client caching.
 
 ---
 
-## 🌐 How to Host on a Free Server
+## How to Run Locally
 
-To share this page with your friends as a live URL link (like a website), you can use either of these free, instant hosting platforms:
+You can open the project immediately without installing any external runtime:
+1. Open [`index.html`](file:///C:/Projects%20learning%20spectro/game-anime-vault/index.html) in Google Chrome, Brave, Edge, or any modern web browser.
+2. The dashboard will initialize with 0ms startup latency.
+
+---
+
+## Features
+
+- **Games Logging**: Document games played, completion status, review notes, release year, and star ratings.
+- **Gaming News**: Integrated RSS feed for top PC and console gaming news.
+- **Supabase Cloud Sync & Auth**: Secure cross-device account syncing with email or username login.
+- **Backup & Restore**: Instant JSON backup (`gameledger_backup.json`) and restore utility with automated deduplication.
+- **Dark Glassmorphic UI**: Ambient mouse-glow reactive backdrop and responsive layout for mobile and desktop.
+
+---
+
+## Deployment
 
 ### Option A: GitHub Pages (Recommended - 100% Free)
-1. Go to [GitHub](https://github.com/) and create a free account if you don't have one.
-2. Click **New Repository**. Name it `game-anime-vault`. Set it to **Public**.
-3. Upload the three files (`index.html`, `style.css`, and `app.js`) to the repository.
-4. Go to your repository **Settings** tab.
-5. In the left sidebar, click **Pages**.
-6. Under **Build and deployment**, set the Source to **Deploy from a branch**.
-7. Under **Branch**, select `main` (or `master`) and click **Save**.
-8. Within 1-2 minutes, your website will be live at:
-   `https://[your-username].github.io/game-anime-vault/`
+1. Go to your repository on [GitHub](https://github.com/).
+2. Rename or create the repository as `gameledger`.
+3. Go to repository **Settings** -> **Pages**.
+4. Set Branch to `main` and Folder to `/ (root)`, then click **Save**.
+5. Your website will be live at: `https://[your-username].github.io/gameledger/`
 
----
+### Option B: Vercel
+1. Import the repository directly on [Vercel](https://vercel.com/).
+2. Vercel automatically deploys static projects without build configurations.
 
-### Option B: Vercel (Instant Drag & Drop)
-1. Go to [Vercel](https://vercel.com/) and sign up for a free "Hobby" account.
-2. Go to the deployment dashboard and click **Add New** -> **Project**.
-3. If you uploaded the project to GitHub, you can import it directly.
-4. Alternatively, download/install Vercel CLI, or upload the `game-anime-vault` folder using their web-based drag-and-drop dashboard.
-5. Vercel will instantly build it and give you a public, sharing-friendly URL!

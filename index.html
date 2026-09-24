@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Game & Anime Vault</title>
+    <title>GameLedger</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://jyjpobfgdwvbyltkvlmu.supabase.co">
@@ -34,16 +34,16 @@
         <header>
             <div class="container">
                 <div class="logo">
-                    <h1>GAME-ANIME <span>VAULT</span></h1>
+                    <h1>GAME<span>LEDGER</span></h1>
                 </div>
                 <div class="header-actions">
                     <div id="header-profile-trigger" class="header-profile-btn" style="cursor: pointer;" title="Profile Settings">
                         <img id="header-avatar" src="" alt="PFP" style="display: none;">
                         <div id="header-avatar-fallback" class="avatar-fallback">U</div>
                     </div>
-                    <button id="add-btn" class="btn btn-primary">+ Add New Item</button>
-                    <button id="export-btn" class="btn btn-secondary">Backup Vault</button>
-                    <button id="import-btn" class="btn btn-secondary">Restore Vault</button>
+                    <button id="add-btn" class="btn btn-primary">+ Add New Game</button>
+                    <button id="export-btn" class="btn btn-secondary">Backup Ledger</button>
+                    <button id="import-btn" class="btn btn-secondary">Restore Ledger</button>
                     <input type="file" id="import-file" style="display: none;" accept=".json">
                 </div>
             </div>
@@ -54,11 +54,10 @@
         <div id="welcome-banner" class="welcome-card" style="margin-bottom: 25px;">
             <div class="welcome-card-content">
                 <span class="close-welcome">&times;</span>
-                <h2>Game & Anime Vault</h2>
-                <p>Track your gaming achievements, document anime series, write detailed reviews, and view the latest industry news in a clean, unified dashboard.</p>
+                <h2>GameLedger</h2>
+                <p>Track your gaming achievements, write detailed reviews, and view the latest industry news in a clean, unified dashboard.</p>
                 <div class="welcome-features">
                     <div class="feature-badge"><span>Games Log</span></div>
-                    <div class="feature-badge"><span>Anime Tracker</span></div>
                     <div class="feature-badge"><span>RSS Feeds</span></div>
                     <div class="feature-badge"><span>Cloud Sync</span></div>
                 </div>
@@ -68,7 +67,6 @@
         <!-- Navigation Tabs -->
         <div class="tabs-container">
             <button class="tab-btn active" data-tab="games">Games</button>
-            <button class="tab-btn" data-tab="anime">Anime</button>
             <button class="tab-btn" data-tab="news">News</button>
         </div>
 
@@ -116,34 +114,25 @@
     <div id="item-modal" class="modal">
         <div class="modal-content">
             <span class="close-modal">&times;</span>
-            <h2 id="modal-title">Add New Item</h2>
+            <h2 id="modal-title">Add New Game</h2>
             <form id="item-form">
                 <input type="hidden" id="item-id">
+                <input type="hidden" id="form-category" value="games">
                 
                 <div class="form-group">
-                    <label for="form-title">Title*</label>
-                    <input type="text" id="form-title" required placeholder="Enter game or anime name">
+                    <label for="form-title">Game Title*</label>
+                    <input type="text" id="form-title" required placeholder="Enter game title">
                 </div>
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="form-category">Category*</label>
-                        <select id="form-category" required>
-                            <option value="games">Game</option>
-                            <option value="anime">Anime</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="form-rating">Rating (Stars)</label>
-                        <select id="form-rating">
-                            <option value="5">5 / 5 Stars</option>
-                            <option value="4">4 / 5 Stars</option>
-                            <option value="3">3 / 5 Stars</option>
-                            <option value="2">2 / 5 Stars</option>
-                            <option value="1">1 / 5 Star</option>
-                        </select>
-                    </div>
+                <div class="form-group">
+                    <label for="form-rating">Rating (Stars)</label>
+                    <select id="form-rating">
+                        <option value="5">5 / 5 Stars</option>
+                        <option value="4">4 / 5 Stars</option>
+                        <option value="3">3 / 5 Stars</option>
+                        <option value="2">2 / 2 Stars</option>
+                        <option value="1">1 / 5 Star</option>
+                    </select>
                 </div>
 
                 <div class="form-row">
@@ -252,7 +241,7 @@
     <div id="delete-confirm-modal" class="modal">
         <div class="modal-content" style="max-width: 400px; text-align: center; padding: 30px;">
             <h2 style="font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700; margin-bottom: 15px; color: var(--text-primary);">Delete Item?</h2>
-            <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 25px;">Are you sure you want to permanently delete "<span id="delete-item-name" style="color: var(--accent-color); font-weight: 600;"></span>" from your vault?</p>
+            <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 25px;">Are you sure you want to permanently delete "<span id="delete-item-name" style="color: var(--accent-color); font-weight: 600;"></span>" from your ledger?</p>
             <div style="display: flex; gap: 12px;">
                 <button id="delete-confirm-btn" class="btn btn-danger" style="flex: 1; padding: 12px;">Yes, Delete</button>
                 <button id="delete-cancel-btn" class="btn btn-secondary" style="flex: 1; padding: 12px;">Cancel</button>
@@ -334,9 +323,9 @@
     <div id="auth-container" class="auth-container">
         <div class="auth-card">
             <div class="logo">
-                <h1>GAME-ANIME <span>VAULT</span></h1>
+                <h1>GAME<span>LEDGER</span></h1>
             </div>
-            <p id="auth-subtitle" class="auth-subtitle">Log in to manage your private gaming logs & watch lists</p>
+            <p id="auth-subtitle" class="auth-subtitle">Log in to manage your private gaming logs & reviews</p>
             <form id="auth-form">
                 <div class="form-group" id="username-group" style="display: none;">
                     <label for="auth-username">Username</label>
@@ -379,19 +368,19 @@
                 <small>Use these details to test the live server without creating an account.</small>
             </div>
             
-            <!-- Option B: Auth Features Preview -->
+            <!-- Ledger Features Preview -->
             <div class="auth-features-preview" style="margin-top: 25px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.05); text-align: left;">
-                <h4 style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 12px; font-weight: 600; letter-spacing: 0.5px;">Vault Features</h4>
+                <h4 style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 12px; font-weight: 600; letter-spacing: 0.5px;">Ledger Features</h4>
                 <ul style="list-style: none; padding: 0; margin: 0; font-size: 13px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 8px;">
                     <li style="display: flex; align-items: center; gap: 8px;"><span style="color: var(--accent-color); font-weight: bold; margin-right: 4px;">•</span> <span><strong>Games Logging</strong>: Track monthly gaming records & reviews.</span></li>
-                    <li style="display: flex; align-items: center; gap: 8px;"><span style="color: var(--accent-color); font-weight: bold; margin-right: 4px;">•</span> <span><strong>Anime Tracking</strong>: Save watched anime episodes & ratings.</span></li>
                     <li style="display: flex; align-items: center; gap: 8px;"><span style="color: var(--accent-color); font-weight: bold; margin-right: 4px;">•</span> <span><strong>Gaming News</strong>: Unified RSS PC/Console gaming feeds.</span></li>
+                    <li style="display: flex; align-items: center; gap: 8px;"><span style="color: var(--accent-color); font-weight: bold; margin-right: 4px;">•</span> <span><strong>Cloud Sync</strong>: Access your games across devices with instant cloud backup.</span></li>
                 </ul>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=23"></script>
+    <script src="app.js?v=25"></script>
 </body>
 </html>
