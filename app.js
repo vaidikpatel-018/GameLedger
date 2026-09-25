@@ -1437,17 +1437,20 @@ function openModal(editItem = null) {
         const catElem = document.getElementById("form-category");
         if (catElem) catElem.value = "games";
     }
+    syncAllCustomSelects();
 }
 
 if (closeModal) {
     closeModal.addEventListener("click", () => {
         if (modal) modal.style.display = "none";
+        closeAllCustomSelects();
     });
 }
 
 window.addEventListener("click", (e) => {
     if (e.target === modal) {
         modal.style.display = "none";
+        closeAllCustomSelects();
     }
 });
 
@@ -1567,6 +1570,250 @@ if (itemForm) {
 document.getElementById("search-input").addEventListener("input", render);
 document.getElementById("year-filter").addEventListener("change", render);
 document.getElementById("sort-filter").addEventListener("change", render);
+
+// ==========================================================================
+// Custom Glassmorphic Select Component
+// ==========================================================================
+
+function getSelectOptionBadge(selectId, opt) {
+    if (selectId === "form-rating") {
+        const val = parseInt(opt.value, 10);
+        if (!isNaN(val)) {
+            return "★".repeat(val) + "☆".repeat(Math.max(0, 5 - val));
+        }
+    }
+    return "";
+}
+
+function openCustomSelect(wrapper) {
+    closeAllCustomSelects();
+    const dropdown = wrapper.querySelector(".custom-select-dropdown");
+    const trigger = wrapper.querySelector(".custom-select-trigger");
+    if (!dropdown || !trigger) return;
+
+    // Check bounds for dropup
+    const triggerRect = trigger.getBoundingClientRect();
+    const dropdownHeight = 220;
+    if (triggerRect.bottom + dropdownHeight > window.innerHeight && triggerRect.top > dropdownHeight) {
+        wrapper.classList.add("dropup");
+    } else {
+        wrapper.classList.remove("dropup");
+    }
+
+    wrapper.classList.add("open");
+    trigger.setAttribute("aria-expanded", "true");
+
+    const selectedOpt = dropdown.querySelector(".custom-select-option.selected");
+    if (selectedOpt) {
+        selectedOpt.scrollIntoView({ block: "nearest" });
+    }
+}
+
+function closeCustomSelect(wrapper) {
+    wrapper.classList.remove("open");
+    wrapper.classList.remove("dropup");
+    const trigger = wrapper.querySelector(".custom-select-trigger");
+    if (trigger) {
+        trigger.setAttribute("aria-expanded", "false");
+    }
+}
+
+function closeAllCustomSelects() {
+    document.querySelectorAll(".custom-select-wrapper.open").forEach(closeCustomSelect);
+}
+
+function syncCustomSelect(select) {
+    if (!select) return;
+    const wrapper = select.closest(".custom-select-wrapper");
+    if (!wrapper) return;
+
+    const trigger = wrapper.querySelector(".custom-select-trigger");
+    const textSpan = trigger ? trigger.querySelector(".custom-select-text") : null;
+    const currentOpt = select.options[select.selectedIndex] || select.options[0];
+    if (!textSpan || !currentOpt) return;
+
+    const badge = getSelectOptionBadge(select.id, currentOpt);
+    if (badge) {
+        textSpan.innerHTML = `<span>${currentOpt.textContent}</span> <span class="custom-select-option-badge">${badge}</span>`;
+    } else {
+        textSpan.innerHTML = `<span>${currentOpt.textContent}</span>`;
+    }
+
+    const dropdown = wrapper.querySelector(".custom-select-dropdown");
+    if (dropdown) {
+        dropdown.querySelectorAll(".custom-select-option").forEach(optDiv => {
+            const isSelected = optDiv.getAttribute("data-value") === select.value;
+            optDiv.classList.toggle("selected", isSelected);
+            optDiv.setAttribute("aria-selected", isSelected ? "true" : "false");
+        });
+    }
+}
+
+function syncAllCustomSelects() {
+    document.querySelectorAll("select").forEach(syncCustomSelect);
+}
+
+function initCustomSelects() {
+    const selects = document.querySelectorAll("select");
+    selects.forEach(select => {
+        if (select.dataset.customSelectInitialized === "true") {
+            syncCustomSelect(select);
+            return;
+        }
+        select.dataset.customSelectInitialized = "true";
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "custom-select-wrapper";
+        if (select.id) {
+            wrapper.setAttribute("data-target-id", select.id);
+        }
+
+        // Hide original select visually while keeping accessible to form serialization
+        select.classList.add("custom-select-hidden");
+        select.parentNode.insertBefore(wrapper, select);
+        wrapper.appendChild(select);
+
+        // Trigger button
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className = "custom-select-trigger";
+        trigger.setAttribute("aria-haspopup", "listbox");
+        trigger.setAttribute("aria-expanded", "false");
+
+        const textSpan = document.createElement("span");
+        textSpan.className = "custom-select-text";
+
+        const arrowSpan = document.createElement("span");
+        arrowSpan.className = "custom-select-arrow";
+        arrowSpan.innerHTML = `
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+        `;
+
+        trigger.appendChild(textSpan);
+        trigger.appendChild(arrowSpan);
+        wrapper.appendChild(trigger);
+
+        // Options dropdown
+        const dropdown = document.createElement("div");
+        dropdown.className = "custom-select-dropdown";
+        dropdown.setAttribute("role", "listbox");
+
+        Array.from(select.options).forEach((opt, idx) => {
+            const optDiv = document.createElement("div");
+            optDiv.className = "custom-select-option";
+            optDiv.setAttribute("role", "option");
+            optDiv.setAttribute("data-value", opt.value);
+            optDiv.setAttribute("data-index", idx);
+
+            const badge = getSelectOptionBadge(select.id, opt);
+            let optionContent = `<span class="custom-select-option-label">${opt.textContent}</span>`;
+            if (badge) {
+                optionContent += `<span class="custom-select-option-badge">${badge}</span>`;
+            }
+
+            const checkSvg = `
+                <span class="custom-select-check">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </span>
+            `;
+
+            optDiv.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">${optionContent}</div>
+                    ${checkSvg}
+                </div>
+            `;
+
+            optDiv.addEventListener("click", (e) => {
+                e.stopPropagation();
+                select.value = opt.value;
+                syncCustomSelect(select);
+                closeCustomSelect(wrapper);
+                select.dispatchEvent(new Event("change", { bubbles: true }));
+                select.dispatchEvent(new Event("input", { bubbles: true }));
+            });
+
+            dropdown.appendChild(optDiv);
+        });
+
+        wrapper.appendChild(dropdown);
+
+        // Click trigger to toggle
+        trigger.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (wrapper.classList.contains("open")) {
+                closeCustomSelect(wrapper);
+            } else {
+                openCustomSelect(wrapper);
+            }
+        });
+
+        // Keyboard navigation
+        trigger.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+                e.preventDefault();
+                if (!wrapper.classList.contains("open")) {
+                    openCustomSelect(wrapper);
+                } else if (e.key === "ArrowDown") {
+                    navigateCustomSelect(dropdown, 1);
+                }
+            } else if (e.key === "ArrowUp" && wrapper.classList.contains("open")) {
+                e.preventDefault();
+                navigateCustomSelect(dropdown, -1);
+            } else if (e.key === "Escape") {
+                closeCustomSelect(wrapper);
+            }
+        });
+
+        if (select.id) {
+            const label = document.querySelector(`label[for="${select.id}"]`);
+            if (label) {
+                label.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    trigger.focus();
+                    if (!wrapper.classList.contains("open")) {
+                        openCustomSelect(wrapper);
+                    }
+                });
+            }
+        }
+
+        syncCustomSelect(select);
+    });
+}
+
+function navigateCustomSelect(dropdown, direction) {
+    const options = Array.from(dropdown.querySelectorAll(".custom-select-option"));
+    if (!options.length) return;
+    const currentIndex = options.findIndex(o => o.classList.contains("selected") || o.classList.contains("focused"));
+    let nextIndex = currentIndex + direction;
+    if (nextIndex < 0) nextIndex = 0;
+    if (nextIndex >= options.length) nextIndex = options.length - 1;
+    options.forEach((o, i) => o.classList.toggle("focused", i === nextIndex));
+    options[nextIndex].scrollIntoView({ block: "nearest" });
+}
+
+// Global listener to close dropdowns on outside click
+window.addEventListener("click", (e) => {
+    if (!e.target.closest(".custom-select-wrapper")) {
+        closeAllCustomSelects();
+    }
+});
+
+// Sync custom selects on form reset
+const itemFormElem = document.getElementById("item-form");
+if (itemFormElem) {
+    itemFormElem.addEventListener("reset", () => {
+        setTimeout(syncAllCustomSelects, 0);
+    });
+}
+
+// Initialize custom selects immediately
+initCustomSelects();
 
 // Tab switching
 document.querySelectorAll(".tab-btn").forEach(btn => {
@@ -2121,3 +2368,10 @@ window.addEventListener("click", (e) => {
         itemToDeleteId = null;
     }
 });
+
+// Ensure custom selects are initialized upon DOM ready
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initCustomSelects);
+} else {
+    initCustomSelects();
+}

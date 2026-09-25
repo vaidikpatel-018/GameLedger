@@ -86,5 +86,10 @@
   - Completely purged the Anime section: removed Anime tab, Anime Tracker badges, and `defaultAnime` data
   - Sanitized database loading: automatically deletes legacy anime records from user accounts in Supabase
   - Sanitized local cache & backup import: filters out legacy anime records so they never render
+- [x] **Custom Glassmorphic Dropdown & Select UI Upgrade**:
+  - Replaced legacy OS-native dropdown select boxes across the app with custom-built dark glassmorphic dropdowns.
+  - Upgraded Filter Section: Year filter (`#year-filter`) and Sorting filter (`#sort-filter`) now feature frosted glass triggers, animated chevrons, and smooth floating option menus.
+  - Upgraded Add/Edit Game Modal: Rating (`#form-rating`), Month (`#form-month`), and Year (`#form-year`) inputs now match the modal aesthetic with glowing borders and amber star badges (`★★★★★`).
+  - Implemented boundary-aware dropup detection, keyboard navigation, outside-click dismissal, and two-way synchronization with native `<select>` elements for seamless backend/Supabase persistence.
 - [x] Local testing & code review
 
