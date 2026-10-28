@@ -3403,6 +3403,93 @@ const drawerShareBtn = document.getElementById("drawer-share-btn");
 const copyShareLinkBtn = document.getElementById("copy-share-link-btn");
 const shareLinkInput = document.getElementById("share-link-input");
 
+
+// URL Shortening Service (Vercel Serverless + Client Fallback)
+async function getShortShareUrl(fullShareUrl) {
+    // 1. Try Vercel Serverless Function (/api/shorten)
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch(`/api/shorten?url=${encodeURIComponent(fullShareUrl)}`, {
+            signal: controller.signal
+        });
+        clearTimeout(timeout);
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.shortUrl && data.shortUrl.startsWith("http")) {
+                return data.shortUrl;
+            }
+        }
+    } catch (e) {
+        console.warn("/api/shorten fallback:", e);
+    }
+
+    // 2. Client-side fallback with open CORS (clck.ru)
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3500);
+        const res = await fetch(`https://clck.ru/--?url=${encodeURIComponent(fullShareUrl)}`, {
+            signal: controller.signal
+        });
+        clearTimeout(timeout);
+        if (res.ok) {
+            const shortText = await res.text();
+            if (shortText && shortText.startsWith("http")) {
+                return shortText.trim();
+            }
+        }
+    } catch (e) {
+        console.warn("clck.ru shortener fallback:", e);
+    }
+
+    // 3. Fallback to full compressed URL
+    return fullShareUrl;
+}
+
+function updateShareLinks(url, username) {
+    const shareLinkInput = document.getElementById("share-link-input");
+    if (shareLinkInput) {
+        shareLinkInput.value = url;
+    }
+
+    const shareMsg = `Check out my GameLedger gaming profile & reviews: ${url}`;
+
+    // WhatsApp Button
+    const waBtn = document.getElementById("share-whatsapp-btn");
+    if (waBtn) {
+        waBtn.href = `https://api.whatsapp.com/send?text=${encodeURIComponent(shareMsg)}`;
+    }
+
+    // Telegram Button
+    const tgBtn = document.getElementById("share-telegram-btn");
+    if (tgBtn) {
+        tgBtn.href = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent("Check out my GameLedger gaming profile!")}`;
+    }
+
+    // Twitter / X Button
+    const twBtn = document.getElementById("share-twitter-btn");
+    if (twBtn) {
+        twBtn.href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out my gaming records on @GameLedger: ${url}`)}`;
+    }
+
+    // Native Share Sheet (on mobile phones / supporting browsers like Instagram, etc.)
+    const nativeBtn = document.getElementById("share-native-btn");
+    if (nativeBtn) {
+        if (navigator.share) {
+            nativeBtn.style.display = "inline-flex";
+            nativeBtn.onclick = () => {
+                navigator.share({
+                    title: `GameLedger - @${username}`,
+                    text: "Check out my gaming records and reviews on GameLedger!",
+                    url: url
+                }).catch(() => {});
+            };
+        } else {
+            nativeBtn.style.display = "none";
+        }
+    }
+}
+
 async function openShareModal() {
     if (!shareModal) return;
 
@@ -3423,70 +3510,51 @@ async function openShareModal() {
         return;
     }
 
-    // Build compact payload (excluding local base64 strings so the URL stays compact)
+    // Open modal immediately for snappy response
+    shareModal.style.display = "flex";
+
+    if (shareLinkInput) {
+        shareLinkInput.value = "Creating short link...";
+    }
+
+    // Build optimized compact payload (excluding redundant known cover URLs and empty notes)
     const payload = {
         u: username,
         a: avatarUrl.startsWith("http") ? avatarUrl : "",
-        g: games.map(item => ({
-            t: item.title,
-            r: item.rating,
-            s: item.status || "completed",
-            h: item.hours || 0,
-            m: item.month,
-            y: item.year,
-            f: item.favorite ? 1 : 0,
-            img: (item.image && item.image.startsWith("http")) ? item.image : (getKnownGameCover(item.title) || ""),
-            n: item.cleanNotes || ""
-        }))
+        g: games.map(item => {
+            const knownCover = getKnownGameCover(item.title);
+            const customImg = (item.image && item.image.startsWith("http") && item.image !== knownCover) ? item.image : "";
+            const gObj = {
+                t: item.title,
+                r: item.rating,
+                s: item.status || "completed",
+                h: item.hours || 0,
+                m: item.month,
+                y: item.year,
+                f: item.favorite ? 1 : 0
+            };
+            if (customImg) gObj.img = customImg;
+            if (item.cleanNotes && item.cleanNotes.trim()) gObj.n = item.cleanNotes.trim();
+            return gObj;
+        })
     };
 
     const encoded = await compressToShareUrl(payload);
-    const shareUrl = `${window.location.origin}${window.location.pathname}?share=${encoded}`;
+    const fullShareUrl = `${window.location.origin}${window.location.pathname}?share=${encoded}`;
 
-    if (shareLinkInput) {
-        shareLinkInput.value = shareUrl;
-    }
+    // Populate initially with full URL as baseline
+    updateShareLinks(fullShareUrl, username);
 
-    // WhatsApp Button
-    const waBtn = document.getElementById("share-whatsapp-btn");
-    if (waBtn) {
-        const text = encodeURIComponent(`Check out my GameLedger gaming profile and review logs: ${shareUrl}`);
-        waBtn.href = `https://api.whatsapp.com/send?text=${text}`;
-    }
-
-    // Telegram Button
-    const tgBtn = document.getElementById("share-telegram-btn");
-    if (tgBtn) {
-        const url = encodeURIComponent(shareUrl);
-        const text = encodeURIComponent(`Check out my GameLedger gaming profile!`);
-        tgBtn.href = `https://t.me/share/url?url=${url}&text=${text}`;
-    }
-
-    // Twitter / X Button
-    const twBtn = document.getElementById("share-twitter-btn");
-    if (twBtn) {
-        const text = encodeURIComponent(`Here are the games I've logged on @GameLedger: ${shareUrl}`);
-        twBtn.href = `https://twitter.com/intent/tweet?text=${text}`;
-    }
-
-    // Native Share Sheet (on mobile phones / supporting browsers)
-    const nativeBtn = document.getElementById("share-native-btn");
-    if (nativeBtn) {
-        if (navigator.share) {
-            nativeBtn.style.display = "inline-flex";
-            nativeBtn.onclick = () => {
-                navigator.share({
-                    title: `GameLedger - @${username}`,
-                    text: "Check out my gaming records and reviews on GameLedger!",
-                    url: shareUrl
-                }).catch(() => {});
-            };
-        } else {
-            nativeBtn.style.display = "none";
+    // Asynchronously resolve short URL (~300ms)
+    try {
+        const shortUrl = await getShortShareUrl(fullShareUrl);
+        if (shortUrl) {
+            updateShareLinks(shortUrl, username);
         }
+    } catch (err) {
+        console.warn("Could not shorten link, using direct URL:", err);
+        updateShareLinks(fullShareUrl, username);
     }
-
-    shareModal.style.display = "flex";
 }
 
 if (headerShareBtn) headerShareBtn.addEventListener("click", openShareModal);
