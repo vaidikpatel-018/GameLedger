@@ -91,5 +91,33 @@
   - Upgraded Filter Section: Year filter (`#year-filter`) and Sorting filter (`#sort-filter`) now feature frosted glass triggers, animated chevrons, and smooth floating option menus.
   - Upgraded Add/Edit Game Modal: Rating (`#form-rating`), Month (`#form-month`), and Year (`#form-year`) inputs now match the modal aesthetic with glowing borders and amber star badges (`★★★★★`).
   - Implemented boundary-aware dropup detection, keyboard navigation, outside-click dismissal, and two-way synchronization with native `<select>` elements for seamless backend/Supabase persistence.
+- [x] **Game Status Tracking System**:
+  - Implemented 3 focused statuses: *Completed* (Sky Blue), *Playing* (Emerald Green), and *Dropped* (Coral Red).
+  - Added color-coded status badges on cards, detail modal, and ledger table rows.
+  - Added custom glassmorphic Status filter dropdown (`#status-filter`) with status indicator badges.
+- [x] **Playtime / Hours Tracking**:
+  - Added playtime hours input and display on cards and ledger rows.
+  - Added sorting by `Most Hours` played and `Highest Rated`.
+- [x] **Favorites & Hall of Fame (★ Favorite)**:
+  - Interactive star favorite toggle on cards, ledger rows, and detail modal.
+  - Glowing amber border highlight for favorited games.
+  - "★ Favorites Only" filter option with instant cloud and local cache persistence.
+- [x] **Dual View Mode (Poster Grid vs. Compact Ledger Table View)**:
+  - Added segmented view toggle (`#view-grid-btn` and `#view-list-btn`).
+  - Compact Ledger table layout showing thumbnails, titles, status pills, star ratings, playtime hours, logged dates, and quick action buttons.
+  - Persists preference in `localStorage` (`vault_view_mode`).
+- [x] **Interactive Ledger Analytics & Insights Modal**:
+  - Added `#insights-modal` with hero metric cards: Total Games Logged, Total Playtime, Average Star Rating, and Completion Rate %.
+  - Visual status distribution multi-color progress bar (Playing, Completed, Dropped).
+  - Hall of Fame showcase featuring 5-star and favorited games.
+- [x] **HTML5 Canvas Gaming Showcase Trophy Card Export**:
+  - High-resolution (1200x630) social banner graphic generator built with HTML5 Canvas.
+  - Displays user avatar, username, key statistics, and top 4 game covers with gold stars.
+  - One-click export download as `GameLedger_Showcase.png` for sharing on Discord and Reddit.
+- [x] **Search Clear Button & Power Gamer Keyboard Shortcuts**:
+  - Dedicated `✕` clear button for search input.
+  - Shortcuts: `/` or `Ctrl+K` to search, `N` for new game, `I` for insights, `G` for grid view, `L` for ledger view, `Esc` to close any modal.
+- [x] **Localhost HTTP Server**:
+  - Running live on `http://localhost:8080` for immediate interactive preview and testing.
 - [x] Local testing & code review
 

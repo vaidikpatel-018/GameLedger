@@ -1100,18 +1100,102 @@ function compareItemsByCreation(a, b) {
 }
 
 // Render Cards
+
+// ==========================================================================
+// ADVANCED GAME METADATA SYSTEM (v30)
+// ==========================================================================
+
+let currentViewMode = localStorage.getItem("vault_view_mode") || "grid";
+
+// Extract metadata from item notes (<!--GL_META:{...}-->)
+function parseItemMetadata(item) {
+    let status = "completed";
+    let hours = 0;
+    let favorite = false;
+    let rawNotes = item.notes || "";
+    let cleanNotes = rawNotes;
+
+    const metaMatch = rawNotes.match(/<!--GL_META:(.*?)-->/);
+    if (metaMatch) {
+        try {
+            const meta = JSON.parse(metaMatch[1]);
+            if (meta.status) {
+                const s = String(meta.status).toLowerCase();
+                if (s === "playing" || s === "dropped" || s === "completed") {
+                    status = s;
+                } else {
+                    status = "completed";
+                }
+            }
+            if (meta.hours !== undefined) hours = parseInt(meta.hours, 10) || 0;
+            if (meta.fav !== undefined) favorite = !!meta.fav;
+            cleanNotes = rawNotes.replace(/<!--GL_META:(.*?)-->/, "").trim();
+        } catch (e) {
+            console.warn("Error parsing metadata for item:", item.title, e);
+        }
+    }
+
+    return {
+        ...item,
+        status,
+        hours,
+        favorite,
+        cleanNotes
+    };
+}
+
+// Serialize clean notes and metadata for cloud/cache storage
+function serializeNotesWithMetadata(cleanNotes, status, hours, favorite) {
+    const metaObj = {
+        status: status || "completed",
+        hours: parseInt(hours, 10) || 0,
+        fav: !!favorite
+    };
+    const metaStr = `<!--GL_META:${JSON.stringify(metaObj)}-->`;
+    const stripped = (cleanNotes || "").replace(/<!--GL_META:(.*?)-->/, "").trim();
+    return stripped ? `${stripped}\n\n${metaStr}` : metaStr;
+}
+
+// Helper to format status text and classes (Completed, Playing, Dropped)
+function getStatusMeta(status) {
+    const s = String(status || "completed").toLowerCase();
+    switch (s) {
+        case "playing":
+            return { label: "● Playing", cls: "status-playing" };
+        case "dropped":
+            return { label: "✕ Dropped", cls: "status-dropped" };
+        case "completed":
+        default:
+            return { label: "✓ Completed", cls: "status-completed" };
+    }
+}
+
 function render() {
     const grid = document.getElementById("grid-section");
-    const searchQuery = document.getElementById("search-input").value.toLowerCase();
-    const yearFilter = document.getElementById("year-filter").value;
-    const sortFilter = document.getElementById("sort-filter").value;
+    const searchInput = document.getElementById("search-input");
+    const rawSearch = searchInput ? searchInput.value : "";
+    const isSearching = rawSearch.trim().length > 0;
+    const searchQuery = rawSearch.trim().toLowerCase();
+    
+    const yearFilterElem = document.getElementById("year-filter");
+    const yearFilter = yearFilterElem ? yearFilterElem.value : "all";
+    
+    const sortFilterElem = document.getElementById("sort-filter");
+    const sortFilter = sortFilterElem ? sortFilterElem.value : "newest";
+
+    const statusFilterElem = document.getElementById("status-filter");
+    const statusFilter = statusFilterElem ? statusFilterElem.value : "all";
+
+    // Toggle search clear button
+    const clearBtn = document.getElementById("search-clear-btn");
+    if (clearBtn) {
+        clearBtn.style.display = isSearching ? "block" : "none";
+    }
 
     grid.innerHTML = "";
 
     if (currentTab === "news") {
         document.getElementById("add-btn").style.display = "none";
-        document.getElementById("export-btn").style.display = "none";
-        document.getElementById("import-btn").style.display = "none";
         document.querySelector(".controls-section").style.display = "none";
         const statsSummary = document.getElementById("stats-summary");
         if (statsSummary) statsSummary.style.display = "none";
@@ -1134,7 +1218,8 @@ function render() {
                     <button id="retry-news-btn" class="btn btn-primary">Retry Connection</button>
                 </div>
             `;
-            document.getElementById("retry-news-btn").addEventListener("click", loadNewsData);
+            const retryBtn = document.getElementById("retry-news-btn");
+            if (retryBtn) retryBtn.addEventListener("click", loadNewsData);
             return;
         }
         
@@ -1143,7 +1228,6 @@ function render() {
             card.className = "card news-card";
             
             const image = (item.enclosure && item.enclosure.link) || item.thumbnail || "";
-            
             let imageHtml = "";
             if (image) {
                 imageHtml = `<img src="${image}" class="card-img" alt="${item.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">`;
@@ -1175,23 +1259,46 @@ function render() {
         return;
     }
 
+    // Games Tab Controls Active
     document.getElementById("add-btn").style.display = "inline-flex";
-    document.getElementById("export-btn").style.display = "inline-flex";
-    document.getElementById("import-btn").style.display = "inline-flex";
     document.querySelector(".controls-section").style.display = "flex";
 
+    // Parse metadata for all games
+    const parsedGames = entertainmentList
+        .filter(item => item.category === currentTab)
+        .map(parseItemMetadata);
+
     // Filter items
-    let filtered = entertainmentList.filter(item => {
-        const matchesTab = item.category === currentTab;
-        const matchesSearch = item.title.toLowerCase().includes(searchQuery);
+    let filtered = parsedGames.filter(item => {
+        const matchesSearch = isSearching ? item.title.toLowerCase().includes(searchQuery) : true;
         const matchesYear = yearFilter === "all" ? true : item.year.toString() === yearFilter;
-        return matchesTab && matchesSearch && matchesYear;
+        
+        let matchesStatus = true;
+        if (statusFilter === "favorites") {
+            matchesStatus = item.favorite === true;
+        } else if (statusFilter !== "all") {
+            matchesStatus = item.status === statusFilter;
+        }
+
+        return matchesSearch && matchesYear && matchesStatus;
     });
+
+    // Compute Overall Stats for Summary Bar
+    const totalGames = parsedGames.length;
+    const totalHours = parsedGames.reduce((acc, curr) => acc + (curr.hours || 0), 0);
+    const avgRating = totalGames > 0 
+        ? (parsedGames.reduce((acc, curr) => acc + (curr.rating || 0), 0) / totalGames).toFixed(1)
+        : "0.0";
 
     const statsSummary = document.getElementById("stats-summary");
     if (statsSummary) {
-        statsSummary.style.display = "block";
-        statsSummary.innerHTML = `Total Games: <span style="color: var(--accent-color); font-weight: 800;">${filtered.length}</span>`;
+        statsSummary.style.display = "flex";
+        const elGames = document.getElementById("stat-total-games");
+        const elHours = document.getElementById("stat-total-hours");
+        const elRating = document.getElementById("stat-avg-rating");
+        if (elGames) elGames.innerText = totalGames;
+        if (elHours) elHours.innerText = totalHours > 0 ? `${totalHours}h` : "0h";
+        if (elRating) elRating.innerText = `${avgRating} ★`;
     }
 
     // Sorting
@@ -1202,93 +1309,252 @@ function render() {
             if (cmp !== 0) return cmp;
             return compareItemsByCreation(a, b);
         }
+
+        if (sortFilter === "rating") {
+            if (b.rating !== a.rating) return b.rating - a.rating;
+            return compareItemsByCreation(a, b);
+        }
+
+        if (sortFilter === "hours") {
+            const hA = a.hours || 0;
+            const hB = b.hours || 0;
+            if (hB !== hA) return hB - hA;
+            return compareItemsByCreation(a, b);
+        }
         
-        const dateWeightA = parseInt(a.year) * 12 + months.indexOf(a.month);
-        const dateWeightB = parseInt(b.year) * 12 + months.indexOf(b.month);
+        const dateWeightA = parseInt(a.year, 10) * 12 + months.indexOf(a.month);
+        const dateWeightB = parseInt(b.year, 10) * 12 + months.indexOf(b.month);
 
         if (sortFilter === "newest") {
             if (dateWeightB !== dateWeightA) {
                 return dateWeightB - dateWeightA;
             }
-            // Same month and year: latest added game first!
             return compareItemsByCreation(a, b);
         } else {
             if (dateWeightA !== dateWeightB) {
                 return dateWeightA - dateWeightB;
             }
-            // Oldest month first; within same month, oldest added first!
             return -compareItemsByCreation(a, b);
         }
     });
 
-    // Build Cards
-    filtered.forEach(item => {
-        const card = document.createElement("div");
-        card.className = "card";
-        
-        let stars = renderStars(item.rating);
-        
-        let imageHtml = "";
-        if (item.image) {
-            imageHtml = `<img src="${item.image}" class="card-img" alt="${item.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">`;
-        }
-        
-        const style = getGlowStyle(item.title);
-        
-        card.innerHTML = `
-            <div class="card-img-container" style="${style}">
-                ${imageHtml}
-                <div class="card-fallback" style="display: ${item.image ? 'none' : 'flex'}">
-                    ${item.title.substring(0, 2).toUpperCase()}
-                </div>
-                <div class="card-date-badge">${item.month} ${item.year}</div>
-                
-                <!-- Hover actions overlay -->
-                <div class="card-actions-overlay">
-                    <button class="btn-action btn-edit" data-id="${item.id}" title="Edit Item">
-                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                            <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                        </svg>
-                    </button>
-                    <button class="btn-action btn-delete" data-id="${item.id}" title="Delete Item">
-                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                            <line x1="10" y1="11" x2="10" y2="17"></line>
-                            <line x1="14" y1="11" x2="14" y2="17"></line>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-            <div class="card-content">
-                <h3 class="card-title">${item.title}</h3>
-                <div class="card-rating">${stars}</div>
-                <p class="card-notes">${item.notes || 'No review notes written yet.'}</p>
-            </div>
-        `;
-        grid.appendChild(card);
-    });
-
+    // Check empty state
     if (filtered.length === 0) {
         const placeholder = document.createElement("div");
         placeholder.className = "empty-vault-state";
-        placeholder.innerHTML = `
-            <div class="empty-state-icon" style="margin-bottom: 15px;">
-                <svg viewBox="0 0 24 24" width="48" height="48" stroke="var(--text-secondary)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; display: inline-block;">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                </svg>
-            </div>
-            <h3>Your Ledger is empty</h3>
-            <p>You haven't logged any games for the selected filters. Let's create your first record!</p>
-            <button class="btn btn-primary" onclick="document.getElementById('add-btn').click()">+ Add First Log</button>
-        `;
+        
+        if (isSearching) {
+            placeholder.innerHTML = `
+                <div class="empty-state-icon" style="margin-bottom: 15px;">
+                    <svg viewBox="0 0 24 24" width="48" height="48" stroke="var(--text-secondary)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; display: inline-block;">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                </div>
+                <h3>Not found or spelling mistake</h3>
+                <p style="max-width: 380px;">No matching game found. It may not be added to your ledger or there might be a spelling mistake.</p>
+                <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                    <button class="btn btn-secondary" onclick="document.getElementById('search-input').value = ''; render();">Clear Search</button>
+                    <button class="btn btn-primary" onclick="document.getElementById('add-btn').click()">+ Add Game</button>
+                </div>
+            `;
+        } else if (totalGames === 0) {
+            placeholder.innerHTML = `
+                <div class="empty-state-icon" style="margin-bottom: 15px;">
+                    <svg viewBox="0 0 24 24" width="48" height="48" stroke="var(--text-secondary)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; display: inline-block;">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </div>
+                <h3>Your Ledger is empty</h3>
+                <p>You haven't logged any games yet. Let's create your first record!</p>
+                <button class="btn btn-primary" onclick="document.getElementById('add-btn').click()">+ Add First Log</button>
+            `;
+        } else {
+            placeholder.innerHTML = `
+                <div class="empty-state-icon" style="margin-bottom: 15px;">
+                    <svg viewBox="0 0 24 24" width="48" height="48" stroke="var(--text-secondary)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; display: inline-block;">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </div>
+                <h3>No games found</h3>
+                <p>You haven't logged any games for the selected filters.</p>
+                <button class="btn btn-secondary" onclick="document.getElementById('status-filter').value = 'all'; document.getElementById('year-filter').value = 'all'; syncAllCustomSelects(); render();">Reset Filters</button>
+            `;
+        }
         grid.appendChild(placeholder);
+        return;
+    }
+
+    // =========================================================================
+    // RENDER: COMPACT LEDGER (TABLE / LIST) VIEW
+    // =========================================================================
+    if (currentViewMode === "list") {
+        const tableContainer = document.createElement("div");
+        tableContainer.className = "ledger-table-container";
+        
+        let rowsHtml = "";
+        filtered.forEach(item => {
+            const statusInfo = getStatusMeta(item.status);
+            const stars = renderStars(item.rating);
+            const favIcon = item.favorite ? "★" : "☆";
+            const favClass = item.favorite ? "active" : "";
+
+            let thumbHtml = "";
+            if (item.image) {
+                thumbHtml = `<img src="${item.image}" class="ledger-thumb-img" alt="${item.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">`;
+            }
+
+            rowsHtml += `
+                <tr class="ledger-row ${item.favorite ? 'is-favorite' : ''}" data-id="${item.id}">
+                    <td style="width: 54px; padding-right: 0;">
+                        <div class="ledger-thumb-wrap">
+                            ${thumbHtml}
+                            <div class="ledger-thumb-fallback" style="display: ${item.image ? 'none' : 'flex'}">
+                                ${item.title.substring(0, 2).toUpperCase()}
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="ledger-title-text">
+                            ${item.favorite ? '<span style="color: #fbbf24; font-size: 14px;">★</span>' : ''}
+                            <span>${item.title}</span>
+                        </div>
+                        ${item.hours ? `<div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">${item.hours} hrs played</div>` : ''}
+                    </td>
+                    <td>
+                        <span class="status-badge ${statusInfo.cls}">${statusInfo.label}</span>
+                    </td>
+                    <td>
+                        <div class="card-rating" style="margin-bottom: 0;">${stars}</div>
+                    </td>
+                    <td style="color: var(--text-secondary); font-family: 'Space Grotesk', sans-serif;">
+                        ${item.hours ? item.hours + 'h' : '--'}
+                    </td>
+                    <td style="color: var(--text-secondary); font-size: 12.5px;">
+                        ${item.month} ${item.year}
+                    </td>
+                    <td style="text-align: right;">
+                        <div class="ledger-table-actions" style="justify-content: flex-end;">
+                            <button type="button" class="btn-action btn-favorite ${favClass}" data-id="${item.id}" title="Toggle Favorite">
+                                <svg viewBox="0 0 24 24" width="15" height="15" fill="${item.favorite ? '#fbbf24' : 'none'}" stroke="currentColor" stroke-width="2">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                                </svg>
+                            </button>
+                            <button type="button" class="btn-action btn-edit" data-id="${item.id}" title="Edit Game">
+                                <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                    <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                </svg>
+                            </button>
+                            <button type="button" class="btn-action btn-delete" data-id="${item.id}" title="Delete Game">
+                                <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tableContainer.innerHTML = `
+            <table class="ledger-table">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>Game Title</th>
+                        <th>Status</th>
+                        <th>Rating</th>
+                        <th>Hours</th>
+                        <th>Logged Date</th>
+                        <th style="text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
+        `;
+        grid.appendChild(tableContainer);
+    } else {
+        // =========================================================================
+        // RENDER: POSTER GRID VIEW
+        // =========================================================================
+        filtered.forEach(item => {
+            const card = document.createElement("div");
+            card.className = `card ${item.favorite ? 'is-favorite' : ''}`;
+            card.setAttribute("data-id", item.id);
+            
+            const stars = renderStars(item.rating);
+            const statusInfo = getStatusMeta(item.status);
+            
+            let imageHtml = "";
+            if (item.image) {
+                imageHtml = `<img src="${item.image}" class="card-img" alt="${item.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">`;
+            }
+            
+            const style = getGlowStyle(item.title);
+            const favPill = item.favorite ? `<div class="card-fav-badge" title="All-Time Favorite">★</div>` : "";
+            
+            card.innerHTML = `
+                <div class="card-img-container" style="${style}">
+                    ${imageHtml}
+                    <div class="card-fallback" style="display: ${item.image ? 'none' : 'flex'}">
+                        ${item.title.substring(0, 2).toUpperCase()}
+                    </div>
+                    
+                    <!-- Backlog Status Badge (Top Left) -->
+                    <div class="card-status-badge status-badge ${statusInfo.cls}">
+                        ${statusInfo.label}
+                    </div>
+
+                    <!-- Favorite Star Badge (Top Right) -->
+                    ${favPill}
+
+                    <!-- Date Badge (Bottom Left) -->
+                    <div class="card-date-badge" style="top: auto; bottom: 10px; left: 10px;">
+                        ${item.month} ${item.year}
+                    </div>
+
+                    <!-- Platform & Hours Pill (Bottom Right) -->
+                    ${item.hours ? `<div class="card-platform-pill"><span>${item.hours}h</span></div>` : ''}
+                    
+                    <!-- Hover Actions Overlay -->
+                    <div class="card-actions-overlay">
+                        <button type="button" class="btn-action btn-favorite ${item.favorite ? 'active' : ''}" data-id="${item.id}" title="Toggle Favorite">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="${item.favorite ? '#fbbf24' : 'none'}" stroke="currentColor" stroke-width="2">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                            </svg>
+                        </button>
+                        <button type="button" class="btn-action btn-edit" data-id="${item.id}" title="Edit Game">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                        </button>
+                        <button type="button" class="btn-action btn-delete" data-id="${item.id}" title="Delete Game">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-content">
+                    <h3 class="card-title">${item.title}</h3>
+                    <div class="card-rating">${stars}</div>
+                    <p class="card-notes">${item.cleanNotes || 'No review notes written yet.'}</p>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
     }
 
     // Attach card event listeners
     document.querySelectorAll(".btn-delete").forEach(btn => {
         btn.addEventListener("click", (e) => {
+            e.stopPropagation();
             const deleteBtn = e.target.closest(".btn-delete");
             const id = deleteBtn.getAttribute("data-id");
 
@@ -1308,6 +1574,7 @@ function render() {
 
     document.querySelectorAll(".btn-edit").forEach(btn => {
         btn.addEventListener("click", (e) => {
+            e.stopPropagation();
             const editBtn = e.target.closest(".btn-edit");
             const id = editBtn.getAttribute("data-id");
             const item = entertainmentList.find(item => item.id === id);
@@ -1317,22 +1584,67 @@ function render() {
         });
     });
 
-    // Attach card click listener to open Detail Modal
-    document.querySelectorAll(".card").forEach(cardDiv => {
-        cardDiv.addEventListener("click", (e) => {
-            // Ignore clicks if clicked on an action button inside the card overlay
-            if (e.target.closest(".btn-action")) {
+    document.querySelectorAll(".btn-favorite").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const favBtn = e.target.closest(".btn-favorite");
+            const id = favBtn.getAttribute("data-id");
+            toggleFavorite(id);
+        });
+    });
+
+    // Attach row / card click listener to open Detail Modal
+    document.querySelectorAll(".card, .ledger-row").forEach(el => {
+        el.addEventListener("click", (e) => {
+            if (e.target.closest(".btn-action") || e.target.closest("button") || e.target.closest("a")) {
                 return;
             }
-            const editBtn = cardDiv.querySelector(".btn-edit");
-            if (!editBtn) return; // Ignore placeholders
-            const id = editBtn.getAttribute("data-id");
+            const id = el.getAttribute("data-id") || el.querySelector(".btn-edit")?.getAttribute("data-id");
+            if (!id) return;
             const item = entertainmentList.find(item => item.id === id);
             if (item) {
                 openDetailModal(item);
             }
         });
     });
+}
+
+// Toggle Favorite status with cloud sync
+async function toggleFavorite(id) {
+    if (!id) return;
+
+    if (currentUser && currentUser.email === "demo@example.com" && !isAdminMode) {
+        showToast("This is a demo account. Create a free account to customize favorites!", false);
+        return;
+    }
+
+    const idx = entertainmentList.findIndex(item => item.id === id);
+    if (idx === -1) return;
+
+    const item = entertainmentList[idx];
+    const parsed = parseItemMetadata(item);
+    const newFavState = !parsed.favorite;
+
+    const updatedNotes = serializeNotesWithMetadata(parsed.cleanNotes, parsed.status, parsed.hours, newFavState);
+
+    entertainmentList[idx].notes = updatedNotes;
+
+    // Background sync with Supabase
+    if (currentUser) {
+        saveItemsToCache(currentUser.id, entertainmentList);
+        try {
+            await supabaseClient
+                .from("vault_items")
+                .update({ notes: updatedNotes })
+                .eq("id", id)
+                .eq("user_id", currentUser.id);
+        } catch (e) {
+            console.warn("Could not sync favorite to Supabase:", e);
+        }
+    }
+
+    showToast(newFavState ? `Added "${item.title}" to Hall of Fame ⭐` : `Removed "${item.title}" from favorites`);
+    render();
 }
 
 // Modal handling and Image Upload Compression
@@ -1415,18 +1727,30 @@ function openModal(editItem = null) {
     updatePreview("");
 
     if (editItem) {
+        const parsed = parseItemMetadata(editItem);
         document.getElementById("modal-title").innerText = "Edit Game";
         document.getElementById("item-id").value = editItem.id;
         document.getElementById("form-title").value = editItem.title;
+        
         const catElem = document.getElementById("form-category");
         if (catElem) catElem.value = "games";
+
+        const statusElem = document.getElementById("form-status");
+        if (statusElem) statusElem.value = parsed.status || "completed";
+
+        const hoursElem = document.getElementById("form-hours");
+        if (hoursElem) hoursElem.value = parsed.hours > 0 ? parsed.hours : "";
+
+        const favElem = document.getElementById("form-favorite");
+        if (favElem) favElem.checked = !!parsed.favorite;
+        
         document.getElementById("form-rating").value = editItem.rating;
         document.getElementById("form-month").value = editItem.month;
         document.getElementById("form-year").value = editItem.year.toString();
         
         document.getElementById("form-image").value = editItem.image.startsWith("data:") ? "" : editItem.image;
         uploadedImageBase64 = editItem.image.startsWith("data:") ? editItem.image : "";
-        document.getElementById("form-notes").value = editItem.notes;
+        document.getElementById("form-notes").value = parsed.cleanNotes || editItem.notes || "";
         
         if (editItem.image) {
             updatePreview(editItem.image);
@@ -1436,6 +1760,15 @@ function openModal(editItem = null) {
         document.getElementById("item-id").value = "";
         const catElem = document.getElementById("form-category");
         if (catElem) catElem.value = "games";
+
+        const statusElem = document.getElementById("form-status");
+        if (statusElem) statusElem.value = "completed";
+
+        const hoursElem = document.getElementById("form-hours");
+        if (hoursElem) hoursElem.value = "";
+
+        const favElem = document.getElementById("form-favorite");
+        if (favElem) favElem.checked = false;
     }
     syncAllCustomSelects();
 }
@@ -1463,10 +1796,16 @@ if (itemForm) {
         const id = document.getElementById("item-id").value;
         const title = document.getElementById("form-title").value.trim();
         const category = document.getElementById("form-category").value;
-        const rating = parseInt(document.getElementById("form-rating").value);
+        const rating = parseInt(document.getElementById("form-rating").value, 10);
         const month = document.getElementById("form-month").value;
-        const year = parseInt(document.getElementById("form-year").value);
-        const notes = document.getElementById("form-notes").value.trim();
+        const year = parseInt(document.getElementById("form-year").value, 10);
+        const rawNotes = document.getElementById("form-notes").value.trim();
+
+        const status = document.getElementById("form-status") ? document.getElementById("form-status").value : "completed";
+        const hours = document.getElementById("form-hours") ? parseInt(document.getElementById("form-hours").value, 10) || 0 : 0;
+        const favorite = document.getElementById("form-favorite") ? document.getElementById("form-favorite").checked : false;
+
+        const combinedNotes = serializeNotesWithMetadata(rawNotes, status, hours, favorite);
         
         let image = "";
         if (uploadedImageBase64) {
@@ -1496,7 +1835,7 @@ if (itemForm) {
             if (currentUser) {
                 const res = await supabaseClient
                     .from("vault_items")
-                    .update({ title, category, rating, month, year, image, notes })
+                    .update({ title, category, rating, month, year, image, notes: combinedNotes })
                     .eq("id", id)
                     .eq("user_id", currentUser.id);
                 error = res.error;
@@ -1517,10 +1856,11 @@ if (itemForm) {
                         month, 
                         year, 
                         image, 
-                        notes,
+                        notes: combinedNotes,
                         created_at: existing.created_at || new Date().toISOString()
                     };
                 }
+                showToast(`Updated "${title}" successfully!`);
             }
         } else {
             const newId = Date.now().toString();
@@ -1534,7 +1874,7 @@ if (itemForm) {
                 month, 
                 year, 
                 image, 
-                notes, 
+                notes: combinedNotes, 
                 created_at: createdAt 
             };
             
@@ -1549,8 +1889,8 @@ if (itemForm) {
             if (error) {
                 showToast("Error saving item: " + error.message, false);
             } else {
-                // Store latest added game first
                 entertainmentList.unshift(newItem);
+                showToast(`Added "${title}" to your ledger!`);
             }
         }
 
@@ -1581,6 +1921,13 @@ function getSelectOptionBadge(selectId, opt) {
         if (!isNaN(val)) {
             return "★".repeat(val) + "☆".repeat(Math.max(0, 5 - val));
         }
+    }
+    if (selectId === "status-filter" || selectId === "form-status") {
+        const val = String(opt.value).toLowerCase();
+        if (val === "playing") return "● Playing";
+        if (val === "completed") return "✓ Done";
+        if (val === "dropped") return "✕ Drop";
+        if (val === "favorites") return "★ Favs";
     }
     return "";
 }
@@ -2070,12 +2417,34 @@ const closeDetailModal = document.querySelector(".close-detail-modal");
 const detailCloseBtn = document.getElementById("detail-close-btn");
 
 function openDetailModal(item) {
+    const parsed = parseItemMetadata(item);
+    const statusInfo = getStatusMeta(parsed.status);
+
     document.getElementById("detail-title").innerText = item.title;
     document.getElementById("detail-rating").innerHTML = renderStars(item.rating);
-    document.getElementById("detail-category-badge").innerText = "Game";
     document.getElementById("detail-date-badge").innerText = `${item.month} ${item.year}`;
-    document.getElementById("detail-notes").innerText = item.notes || "No review notes written yet.";
+    document.getElementById("detail-notes").innerText = parsed.cleanNotes || "No review notes written yet.";
     
+    // Status Badge
+    const statusBadge = document.getElementById("detail-status-badge");
+    if (statusBadge) {
+        statusBadge.className = `badge status-badge ${statusInfo.cls}`;
+        statusBadge.innerText = statusInfo.label;
+    }
+
+    // Favorite Badge & Button
+    const favBadge = document.getElementById("detail-fav-badge");
+    if (favBadge) {
+        favBadge.style.display = parsed.favorite ? "inline-block" : "none";
+    }
+
+    const favBtn = document.getElementById("detail-fav-btn");
+    if (favBtn) {
+        favBtn.setAttribute("data-id", item.id);
+        favBtn.innerHTML = parsed.favorite ? "★ Favorited" : "☆ Favorite";
+        favBtn.style.color = parsed.favorite ? "#fbbf24" : "var(--text-primary)";
+    }
+
     const poster = document.getElementById("detail-poster");
     const fallback = document.getElementById("detail-poster-fallback");
     
@@ -2375,3 +2744,518 @@ if (document.readyState === "loading") {
 } else {
     initCustomSelects();
 }
+
+
+// ==========================================================================
+// ADVANCED INSIGHTS, SHOWCASE CARD GENERATOR, & EVENT HOOKS
+// ==========================================================================
+
+// Favorite Button inside Detail Modal
+const detailFavBtn = document.getElementById("detail-fav-btn");
+if (detailFavBtn) {
+    detailFavBtn.addEventListener("click", () => {
+        const id = detailFavBtn.getAttribute("data-id");
+        if (id) {
+            toggleFavorite(id);
+            const item = entertainmentList.find(it => it.id === id);
+            if (item) {
+                openDetailModal(item);
+            }
+        }
+    });
+}
+
+// View Mode Switcher Listeners
+const viewGridBtn = document.getElementById("view-grid-btn");
+const viewListBtn = document.getElementById("view-list-btn");
+
+if (viewGridBtn && viewListBtn) {
+    viewGridBtn.addEventListener("click", () => {
+        currentViewMode = "grid";
+        localStorage.setItem("vault_view_mode", "grid");
+        viewGridBtn.classList.add("active");
+        viewListBtn.classList.remove("active");
+        render();
+    });
+
+    viewListBtn.addEventListener("click", () => {
+        currentViewMode = "list";
+        localStorage.setItem("vault_view_mode", "list");
+        viewListBtn.classList.add("active");
+        viewGridBtn.classList.remove("active");
+        render();
+    });
+
+    // Hydrate initial view state
+    if (currentViewMode === "list") {
+        viewListBtn.classList.add("active");
+        viewGridBtn.classList.remove("active");
+    } else {
+        viewGridBtn.classList.add("active");
+        viewListBtn.classList.remove("active");
+    }
+}
+
+// Search Clear Button Listener
+const searchClearBtn = document.getElementById("search-clear-btn");
+if (searchClearBtn) {
+    searchClearBtn.addEventListener("click", () => {
+        const searchInput = document.getElementById("search-input");
+        if (searchInput) {
+            searchInput.value = "";
+            render();
+            searchInput.focus();
+        }
+    });
+}
+
+// Status Filter Change Listener
+const statusFilterSelect = document.getElementById("status-filter");
+if (statusFilterSelect) {
+    statusFilterSelect.addEventListener("change", () => {
+        render();
+    });
+}
+
+// ==========================================================================
+// INSIGHTS & ANALYTICS MODAL LOGIC
+// ==========================================================================
+const insightsModal = document.getElementById("insights-modal");
+const insightsBtn = document.getElementById("insights-btn");
+const closeInsightsBtn = document.querySelector(".close-insights-modal");
+const exportShowcaseBtn = document.getElementById("export-showcase-btn");
+
+function openInsightsModal() {
+    if (!insightsModal) return;
+
+    const games = entertainmentList
+        .filter(item => item.category === "games")
+        .map(parseItemMetadata);
+
+    const totalGames = games.length;
+    const totalHours = games.reduce((acc, curr) => acc + (curr.hours || 0), 0);
+    const avgRating = totalGames > 0
+        ? (games.reduce((acc, curr) => acc + (curr.rating || 0), 0) / totalGames).toFixed(1)
+        : "0.0";
+
+    const completedCount = games.filter(g => g.status === "completed").length;
+    const playingCount = games.filter(g => g.status === "playing").length;
+    const droppedCount = games.filter(g => g.status === "dropped").length;
+
+    const compRate = totalGames > 0
+        ? Math.round((completedCount / totalGames) * 100)
+        : 0;
+
+    // Set numbers
+    document.getElementById("ins-total-games").innerText = totalGames;
+    document.getElementById("ins-total-hours").innerText = totalHours > 0 ? `${totalHours}h` : "0h";
+    document.getElementById("ins-avg-rating").innerText = `${avgRating} ★`;
+    document.getElementById("ins-completion-rate").innerText = `${compRate}%`;
+
+    // Render Status Progress Bar
+    const statusBar = document.getElementById("insights-status-bar");
+    const statusLegend = document.getElementById("insights-status-legend");
+    if (statusBar && statusLegend) {
+        statusBar.innerHTML = "";
+        statusLegend.innerHTML = "";
+
+        const statuses = [
+            { key: "playing", label: "Playing", count: playingCount, color: "#10b981" },
+            { key: "completed", label: "Completed", count: completedCount, color: "#38bdf8" },
+            { key: "dropped", label: "Dropped", count: droppedCount, color: "#fb7185" }
+        ];
+
+        statuses.forEach(st => {
+            if (st.count > 0 && totalGames > 0) {
+                const pct = (st.count / totalGames) * 100;
+                const seg = document.createElement("div");
+                seg.className = "insights-status-bar-seg";
+                seg.style.width = `${pct}%`;
+                seg.style.background = st.color;
+                seg.title = `${st.label}: ${st.count} (${Math.round(pct)}%)`;
+                statusBar.appendChild(seg);
+            }
+
+            const item = document.createElement("div");
+            item.className = "insights-legend-item";
+            item.innerHTML = `
+                <span class="insights-legend-dot" style="background: ${st.color};"></span>
+                <span>${st.label}: <strong style="color: var(--text-primary);">${st.count}</strong></span>
+            `;
+            statusLegend.appendChild(item);
+        });
+    }
+
+    // Render Hall of Fame (5-Star & Favorites)
+    const hallGrid = document.getElementById("insights-hall-of-fame");
+    if (hallGrid) {
+        hallGrid.innerHTML = "";
+        const topGames = games.filter(g => g.favorite || g.rating === 5).slice(0, 12);
+
+        if (topGames.length === 0) {
+            hallGrid.innerHTML = "<div style='grid-column: 1 / -1; color: var(--text-secondary); font-size: 13px;'>Rate games 5 stars or mark them with ★ Favorite to feature them in the Hall of Fame!</div>";
+        } else {
+            topGames.forEach(tg => {
+                const card = document.createElement("div");
+                card.className = "hall-game-card";
+                
+                let imgHtml = "";
+                if (tg.image) {
+                    imgHtml = `<img src="${tg.image}" class="hall-game-img" alt="${tg.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">`;
+                }
+
+                card.innerHTML = `
+                    ${imgHtml}
+                    <div class="hall-game-fallback" style="display: ${tg.image ? 'none' : 'flex'}">
+                        ${tg.title.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div class="hall-game-title" title="${tg.title}">${tg.title}</div>
+                    <div class="hall-game-rating">${renderStars(tg.rating)}</div>
+                `;
+                card.addEventListener("click", () => {
+                    insightsModal.style.display = "none";
+                    openDetailModal(tg);
+                });
+                hallGrid.appendChild(card);
+            });
+        }
+    }
+
+    insightsModal.style.display = "flex";
+}
+
+if (insightsBtn) {
+    insightsBtn.addEventListener("click", openInsightsModal);
+}
+
+if (closeInsightsBtn) {
+    closeInsightsBtn.addEventListener("click", () => {
+        insightsModal.style.display = "none";
+    });
+}
+
+window.addEventListener("click", (e) => {
+    if (e.target === insightsModal) {
+        insightsModal.style.display = "none";
+    }
+});
+
+// =========================================================================
+// HTML5 CANVAS: EXPORT GAMING SHOWCASE CARD (1200x630 Social Banner)
+// =========================================================================
+if (exportShowcaseBtn) {
+    exportShowcaseBtn.addEventListener("click", () => {
+        generateShowcaseCard();
+    });
+}
+
+function generateShowcaseCard() {
+    showToast("Generating high-res gaming showcase card...");
+
+    const games = entertainmentList
+        .filter(item => item.category === "games")
+        .map(parseItemMetadata);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 630;
+    const ctx = canvas.getContext("2d");
+
+    // 1. Background gradient
+    const bgGrad = ctx.createRadialGradient(600, 100, 50, 600, 315, 700);
+    bgGrad.addColorStop(0, "#240b12");
+    bgGrad.addColorStop(0.6, "#10090c");
+    bgGrad.addColorStop(1, "#070607");
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, 1200, 630);
+
+    // Decorative ambient glow
+    ctx.fillStyle = "rgba(191, 59, 87, 0.12)";
+    ctx.beginPath();
+    ctx.arc(600, 0, 450, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2. Card frame / border
+    ctx.strokeStyle = "rgba(191, 59, 87, 0.25)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(30, 30, 1140, 570);
+
+    // 3. Header Branding
+    ctx.font = "bold 32px 'Space Grotesk', sans-serif, Arial";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("GAME", 70, 85);
+    const w = ctx.measureText("GAME").width;
+    ctx.fillStyle = "#bf3b57";
+    ctx.fillText("LEDGER", 70 + w, 85);
+
+    ctx.font = "500 16px 'Outfit', sans-serif, Arial";
+    ctx.fillStyle = "#9ca3af";
+    ctx.fillText("GAMER TROPHY SHOWCASE", 70, 115);
+
+    // User details (top right)
+    const username = currentUser && currentUser.user_metadata && currentUser.user_metadata.username
+        ? currentUser.user_metadata.username
+        : (currentUser ? currentUser.email.split("@")[0] : "Player One");
+
+    ctx.font = "bold 20px 'Space Grotesk', sans-serif, Arial";
+    ctx.fillStyle = "#f3f4f6";
+    ctx.textAlign = "right";
+    ctx.fillText(`@${username}`, 1130, 85);
+
+    ctx.font = "14px 'Outfit', sans-serif, Arial";
+    ctx.fillStyle = "#9ca3af";
+    ctx.fillText("Verified Gamer Ledger", 1130, 112);
+    ctx.textAlign = "left";
+
+    // 4. Metrics Cards Row
+    const totalGames = games.length;
+    const totalHours = games.reduce((acc, curr) => acc + (curr.hours || 0), 0);
+    const avgRating = totalGames > 0
+        ? (games.reduce((acc, curr) => acc + (curr.rating || 0), 0) / totalGames).toFixed(1)
+        : "0.0";
+    const completed = games.filter(g => g.status === "completed" || g.status === "mastered").length;
+    const compRate = totalGames > 0 ? Math.round((completed / totalGames) * 100) : 0;
+
+    const metrics = [
+        { label: "GAMES LOGGED", val: String(totalGames) },
+        { label: "HOURS PLAYED", val: totalHours > 0 ? `${totalHours}h` : "0h" },
+        { label: "AVERAGE RATING", val: `${avgRating} ★` },
+        { label: "COMPLETION RATE", val: `${compRate}%` }
+    ];
+
+    const boxW = 245;
+    const boxH = 90;
+    const startX = 70;
+    const boxY = 145;
+
+    metrics.forEach((m, idx) => {
+        const x = startX + idx * (boxW + 30);
+        
+        // Glass card
+        ctx.fillStyle = "rgba(22, 20, 25, 0.7)";
+        ctx.strokeStyle = "rgba(191, 59, 87, 0.2)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x, boxY, boxW, boxH, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.font = "bold 28px 'Space Grotesk', sans-serif, Arial";
+        ctx.fillStyle = "#bf3b57";
+        ctx.fillText(m.val, x + 20, boxY + 45);
+
+        ctx.font = "600 12px 'Space Grotesk', sans-serif, Arial";
+        ctx.fillStyle = "#9ca3af";
+        ctx.fillText(m.label, x + 20, boxY + 72);
+    });
+
+    // 5. Section Header for Hall of Fame
+    ctx.font = "bold 18px 'Space Grotesk', sans-serif, Arial";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("HALL OF FAME FAVORITES", 70, 275);
+
+    // 6. Draw Top 4 Games Cards
+    const top4 = games
+        .filter(g => g.favorite || g.rating === 5)
+        .slice(0, 4);
+
+    const cardW = 245;
+    const cardH = 260;
+    const cardY = 295;
+
+    if (top4.length === 0) {
+        ctx.font = "16px 'Outfit', sans-serif, Arial";
+        ctx.fillStyle = "#9ca3af";
+        ctx.fillText("Add or favorite games to showcase them here!", 70, 340);
+        triggerDownload();
+        return;
+    }
+
+    let loadedImages = 0;
+    const totalToLoad = top4.length;
+
+    function finishDrawing() {
+        // Footer branding
+        ctx.font = "14px 'Space Grotesk', sans-serif, Arial";
+        ctx.fillStyle = "#6b7280";
+        ctx.fillText("thegameledger.vercel.app • Cloud-synced offline-first gaming dashboard", 70, 580);
+
+        ctx.textAlign = "right";
+        ctx.fillText("Made with ❤️ in India", 1130, 580);
+        ctx.textAlign = "left";
+
+        triggerDownload();
+    }
+
+    function triggerDownload() {
+        try {
+            const dataUrl = canvas.toDataURL("image/png");
+            const a = document.createElement("a");
+            a.href = dataUrl;
+            a.download = `GameLedger_Showcase_${username}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            showToast("Showcase card downloaded! Ready to share on Discord or Reddit.");
+        } catch (e) {
+            console.error("Canvas export failed:", e);
+            showToast("Export failed due to image CORS policy. Try games with uploaded images!", false);
+        }
+    }
+
+    top4.forEach((g, idx) => {
+        const x = startX + idx * (cardW + 30);
+
+        // Card bg
+        ctx.fillStyle = "rgba(18, 16, 20, 0.8)";
+        ctx.strokeStyle = g.favorite ? "rgba(251, 191, 36, 0.5)" : "rgba(191, 59, 87, 0.2)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x, cardY, cardW, cardH, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        // Game text & stars
+        ctx.font = "bold 15px 'Space Grotesk', sans-serif, Arial";
+        ctx.fillStyle = "#ffffff";
+        const titleText = g.title.length > 20 ? g.title.substring(0, 18) + "..." : g.title;
+        ctx.fillText(titleText, x + 15, cardY + 205);
+
+        ctx.font = "13px 'Outfit', sans-serif, Arial";
+        ctx.fillStyle = "#fbbf24";
+        ctx.fillText("★★★★★", x + 15, cardY + 228);
+
+        ctx.font = "12px 'Outfit', sans-serif, Arial";
+        ctx.fillStyle = "#9ca3af";
+        ctx.fillText(g.hours ? `${g.hours} hrs played` : 'Completed', x + 15, cardY + 248);
+
+        // Poster image
+        if (g.image) {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+                ctx.save();
+                ctx.beginPath();
+                ctx.roundRect(x + 12, cardY + 12, cardW - 24, 165, 8);
+                ctx.clip();
+                ctx.drawImage(img, x + 12, cardY + 12, cardW - 24, 165);
+                ctx.restore();
+
+                loadedImages++;
+                if (loadedImages === totalToLoad) {
+                    finishDrawing();
+                }
+            };
+            img.onerror = () => {
+                // Draw fallback placeholder
+                ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+                ctx.beginPath();
+                ctx.roundRect(x + 12, cardY + 12, cardW - 24, 165, 8);
+                ctx.fill();
+
+                ctx.font = "bold 28px 'Space Grotesk', sans-serif, Arial";
+                ctx.fillStyle = "#9ca3af";
+                ctx.textAlign = "center";
+                ctx.fillText(g.title.substring(0, 2).toUpperCase(), x + cardW / 2, cardY + 105);
+                ctx.textAlign = "left";
+
+                loadedImages++;
+                if (loadedImages === totalToLoad) {
+                    finishDrawing();
+                }
+            };
+            img.src = g.image;
+        } else {
+            // Draw fallback placeholder
+            ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+            ctx.beginPath();
+            ctx.roundRect(x + 12, cardY + 12, cardW - 24, 165, 8);
+            ctx.fill();
+
+            ctx.font = "bold 28px 'Space Grotesk', sans-serif, Arial";
+            ctx.fillStyle = "#9ca3af";
+            ctx.textAlign = "center";
+            ctx.fillText(g.title.substring(0, 2).toUpperCase(), x + cardW / 2, cardY + 105);
+            ctx.textAlign = "left";
+
+            loadedImages++;
+            if (loadedImages === totalToLoad) {
+                finishDrawing();
+            }
+        }
+    });
+
+    // Timeout safety fallback if images hang
+    setTimeout(() => {
+        if (loadedImages < totalToLoad) {
+            finishDrawing();
+        }
+    }, 2500);
+}
+
+// =========================================================================
+// GLOBAL KEYBOARD SHORTCUTS FOR POWER GAMERS
+// =========================================================================
+window.addEventListener("keydown", (e) => {
+    // If user is currently typing in an input or textarea, don't hijack keys
+    const tag = e.target.tagName.toLowerCase();
+    const isTyping = tag === "input" || tag === "textarea" || e.target.isContentEditable;
+
+    // Escape closes any active modal or drawer
+    if (e.key === "Escape") {
+        if (modal && modal.style.display === "flex") modal.style.display = "none";
+        if (detailModal && detailModal.style.display === "flex") detailModal.style.display = "none";
+        if (insightsModal && insightsModal.style.display === "flex") insightsModal.style.display = "none";
+        const delModal = document.getElementById("delete-confirm-modal");
+        if (delModal && delModal.style.display === "flex") delModal.style.display = "none";
+        const feedModal = document.getElementById("feedback-modal");
+        if (feedModal && feedModal.style.display === "flex") feedModal.style.display = "none";
+        if (profileDrawer && profileDrawer.classList.contains("open")) profileDrawer.classList.remove("open");
+        closeAllCustomSelects();
+        return;
+    }
+
+    if (isTyping) return;
+
+    // / or Ctrl+K: Focus Search Bar
+    if (e.key === "/" || (e.ctrlKey && e.key.toLowerCase() === "k")) {
+        e.preventDefault();
+        const searchInput = document.getElementById("search-input");
+        if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+        }
+        return;
+    }
+
+    // N: Add New Game
+    if (e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        const addBtn = document.getElementById("add-btn");
+        if (addBtn && addBtn.style.display !== "none") {
+            addBtn.click();
+        }
+        return;
+    }
+
+    // I: Open Insights Modal
+    if (e.key.toLowerCase() === "i") {
+        e.preventDefault();
+        openInsightsModal();
+        return;
+    }
+
+    // G: Switch to Grid View
+    if (e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        if (viewGridBtn) viewGridBtn.click();
+        return;
+    }
+
+    // L: Switch to Ledger Table View
+    if (e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        if (viewListBtn) viewListBtn.click();
+        return;
+    }
+});
