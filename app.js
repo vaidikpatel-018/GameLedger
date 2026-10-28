@@ -3404,55 +3404,13 @@ const copyShareLinkBtn = document.getElementById("copy-share-link-btn");
 const shareLinkInput = document.getElementById("share-link-input");
 
 
-// URL Shortening Service (Vercel Serverless + Client Fallback)
-async function getShortShareUrl(fullShareUrl) {
-    // 1. Try Vercel Serverless Function (/api/shorten)
-    try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 4000);
-        const res = await fetch(`/api/shorten?url=${encodeURIComponent(fullShareUrl)}`, {
-            signal: controller.signal
-        });
-        clearTimeout(timeout);
-        if (res.ok) {
-            const data = await res.json();
-            if (data && data.shortUrl && data.shortUrl.startsWith("http")) {
-                return data.shortUrl;
-            }
-        }
-    } catch (e) {
-        console.warn("/api/shorten fallback:", e);
-    }
-
-    // 2. Client-side fallback with open CORS (clck.ru)
-    try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3500);
-        const res = await fetch(`https://clck.ru/--?url=${encodeURIComponent(fullShareUrl)}`, {
-            signal: controller.signal
-        });
-        clearTimeout(timeout);
-        if (res.ok) {
-            const shortText = await res.text();
-            if (shortText && shortText.startsWith("http")) {
-                return shortText.trim();
-            }
-        }
-    } catch (e) {
-        console.warn("clck.ru shortener fallback:", e);
-    }
-
-    // 3. Fallback to full compressed URL
-    return fullShareUrl;
-}
-
-function updateShareLinks(url, username) {
+function updateShareLinks(shareUrl, username) {
     const shareLinkInput = document.getElementById("share-link-input");
     if (shareLinkInput) {
-        shareLinkInput.value = url;
+        shareLinkInput.value = shareUrl;
     }
 
-    const shareMsg = `Check out my GameLedger gaming profile & reviews: ${url}`;
+    const shareMsg = `Check out my GameLedger gaming profile: ${shareUrl}`;
 
     // WhatsApp Button
     const waBtn = document.getElementById("share-whatsapp-btn");
@@ -3463,13 +3421,13 @@ function updateShareLinks(url, username) {
     // Telegram Button
     const tgBtn = document.getElementById("share-telegram-btn");
     if (tgBtn) {
-        tgBtn.href = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent("Check out my GameLedger gaming profile!")}`;
+        tgBtn.href = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent("Check out my GameLedger gaming profile!")}`;
     }
 
     // Twitter / X Button
     const twBtn = document.getElementById("share-twitter-btn");
     if (twBtn) {
-        twBtn.href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out my gaming records on @GameLedger: ${url}`)}`;
+        twBtn.href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out my gaming records on @GameLedger: ${shareUrl}`)}`;
     }
 
     // Native Share Sheet (on mobile phones / supporting browsers like Instagram, etc.)
@@ -3481,7 +3439,7 @@ function updateShareLinks(url, username) {
                 navigator.share({
                     title: `GameLedger - @${username}`,
                     text: "Check out my gaming records and reviews on GameLedger!",
-                    url: url
+                    url: shareUrl
                 }).catch(() => {});
             };
         } else {
@@ -3510,12 +3468,8 @@ async function openShareModal() {
         return;
     }
 
-    // Open modal immediately for snappy response
+    // Open modal immediately
     shareModal.style.display = "flex";
-
-    if (shareLinkInput) {
-        shareLinkInput.value = "Creating short link...";
-    }
 
     // Build optimized compact payload (excluding redundant known cover URLs and empty notes)
     const payload = {
@@ -3540,21 +3494,9 @@ async function openShareModal() {
     };
 
     const encoded = await compressToShareUrl(payload);
-    const fullShareUrl = `${window.location.origin}${window.location.pathname}?share=${encoded}`;
+    const shareUrl = `${window.location.origin}${window.location.pathname}?share=${encoded}`;
 
-    // Populate initially with full URL as baseline
-    updateShareLinks(fullShareUrl, username);
-
-    // Asynchronously resolve short URL (~300ms)
-    try {
-        const shortUrl = await getShortShareUrl(fullShareUrl);
-        if (shortUrl) {
-            updateShareLinks(shortUrl, username);
-        }
-    } catch (err) {
-        console.warn("Could not shorten link, using direct URL:", err);
-        updateShareLinks(fullShareUrl, username);
-    }
+    updateShareLinks(shareUrl, username);
 }
 
 if (headerShareBtn) headerShareBtn.addEventListener("click", openShareModal);
