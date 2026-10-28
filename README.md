@@ -26,6 +26,7 @@ You can open the project immediately without installing any external runtime:
 - **Dual View Mode**: Switch seamlessly between visual **Poster Grid View** and high-density **Compact Ledger Table View**.
 - **Interactive Analytics & Insights**: In-depth stats dashboard calculating completion rates, total hours, average star rating, and status distribution.
 - **Social Showcase Card Export (PNG)**: One-click export of a high-res (1200x630) gamer trophy showcase card ready to share on Discord or Reddit.
+- **Instant Public Link Sharing & View-Only Showcase**: Share your personal ledger via WhatsApp, Telegram, Instagram DMs, or direct link. Friends open a sleek, view-only showcase with your stats, games, ratings, and playtime without needing an account.
 - **Gaming News Feed**: Integrated live RSS feed for top PC and console gaming headlines.
 - **Supabase Cloud Sync & Auth**: Secure cross-device account syncing with email or username login and local-first offline caching.
 - **Power Gamer Shortcuts**: Keyboard shortcuts (`/` or `Ctrl+K` to search, `N` for new game, `I` for insights, `G` for grid, `L` for ledger list, `Esc` to close).

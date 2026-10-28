@@ -119,5 +119,11 @@
   - Shortcuts: `/` or `Ctrl+K` to search, `N` for new game, `I` for insights, `G` for grid view, `L` for ledger view, `Esc` to close any modal.
 - [x] **Localhost HTTP Server**:
   - Running live on `http://localhost:8080` for immediate interactive preview and testing.
+- [x] **Social Link Sharing & Public View-Only Showcase**:
+  - Implemented client-side deflation compression engine using native `CompressionStream` / `DecompressionStream`.
+  - Added **"Share My Ledger"** button in Header actions and Profile Drawer.
+  - Added glassmorphic **Share Modal** with instant 1-click **"Copy Link"** and direct sharing to **WhatsApp**, **Telegram**, **X / Twitter**, and mobile native share sheet.
+  - Implemented dedicated **Public View-Only Showcase** (`#public-view-container`): friends who open the link view the gamer's profile, avatar, total games, total hours, average rating, completion rate, and full game cards/tables with 0ms startup without needing an account.
+  - Added **"Create Your Own Ledger ↗"** CTA button in the shared view so friends can effortlessly switch to the regular app and create their own account.
 - [x] Local testing & code review
 

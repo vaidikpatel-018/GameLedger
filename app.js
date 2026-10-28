@@ -788,7 +788,11 @@ document.getElementById("profile-logout-btn").addEventListener("click", async ()
 });
 
 // Instant Local-First Hydration (0ms Startup)
-function initLocalCache() {
+async function initLocalCache() {
+    // 1. Check if user is opening a shared public showcase link (?share=...)
+    const isShared = await checkAndHydrateShareView();
+    if (isShared) return;
+
     try {
         const cachedUserStr = localStorage.getItem("vault_cached_user");
         if (cachedUserStr) {
@@ -3259,3 +3263,486 @@ window.addEventListener("keydown", (e) => {
         return;
     }
 });
+
+
+// ==========================================================================
+// COMPRESSION & SOCIAL PROFILE SHARING ENGINE (v32)
+// ==========================================================================
+
+function uint8ToBase64Url(uint8) {
+    let bin = "";
+    const len = uint8.byteLength;
+    for (let i = 0; i < len; i++) {
+        bin += String.fromCharCode(uint8[i]);
+    }
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64UrlToUint8(str) {
+    str = str.replace(/-/g, "+").replace(/_/g, "/");
+    while (str.length % 4) str += "=";
+    const bin = atob(str);
+    const len = bin.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = bin.charCodeAt(i);
+    }
+    return bytes;
+}
+
+async function compressToShareUrl(obj) {
+    const jsonStr = JSON.stringify(obj);
+    if (window.CompressionStream) {
+        try {
+            const stream = new Response(
+                new Blob([jsonStr]).stream().pipeThrough(new CompressionStream("deflate-raw"))
+            );
+            const buffer = await stream.arrayBuffer();
+            return uint8ToBase64Url(new Uint8Array(buffer));
+        } catch (e) {
+            console.warn("CompressionStream fallback:", e);
+        }
+    }
+    // Fallback: URI component base64
+    return uint8ToBase64Url(new TextEncoder().encode(jsonStr));
+}
+
+async function decompressFromShareUrl(str) {
+    const bytes = base64UrlToUint8(str);
+    if (window.DecompressionStream) {
+        try {
+            const stream = new Response(
+                new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))
+            );
+            const text = await stream.text();
+            return JSON.parse(text);
+        } catch (e) {
+            console.warn("DecompressionStream fallback:", e);
+        }
+    }
+    // Fallback: TextDecoder
+    const text = new TextDecoder().decode(bytes);
+    return JSON.parse(text);
+}
+
+// Share Modal Elements
+const shareModal = document.getElementById("share-modal");
+const closeShareModalBtn = document.querySelector(".close-share-modal");
+const headerShareBtn = document.getElementById("header-share-btn");
+const drawerShareBtn = document.getElementById("drawer-share-btn");
+const copyShareLinkBtn = document.getElementById("copy-share-link-btn");
+const shareLinkInput = document.getElementById("share-link-input");
+
+async function openShareModal() {
+    if (!shareModal) return;
+
+    const username = currentUser && currentUser.user_metadata && currentUser.user_metadata.username
+        ? currentUser.user_metadata.username
+        : (currentUser ? currentUser.email.split("@")[0] : "Player");
+
+    const avatarUrl = currentUser && currentUser.user_metadata && currentUser.user_metadata.avatar_url
+        ? currentUser.user_metadata.avatar_url
+        : "";
+
+    const games = entertainmentList
+        .filter(item => item.category === "games")
+        .map(parseItemMetadata);
+
+    if (games.length === 0) {
+        showToast("Add at least one game to your ledger before sharing!", false);
+        return;
+    }
+
+    // Build compact payload (excluding local base64 strings so the URL stays compact)
+    const payload = {
+        u: username,
+        a: avatarUrl.startsWith("http") ? avatarUrl : "",
+        g: games.map(item => ({
+            t: item.title,
+            r: item.rating,
+            s: item.status || "completed",
+            h: item.hours || 0,
+            m: item.month,
+            y: item.year,
+            f: item.favorite ? 1 : 0,
+            img: item.image && item.image.startsWith("http") ? item.image : "",
+            n: item.cleanNotes || ""
+        }))
+    };
+
+    const encoded = await compressToShareUrl(payload);
+    const shareUrl = `${window.location.origin}${window.location.pathname}?share=${encoded}`;
+
+    if (shareLinkInput) {
+        shareLinkInput.value = shareUrl;
+    }
+
+    // WhatsApp Button
+    const waBtn = document.getElementById("share-whatsapp-btn");
+    if (waBtn) {
+        const text = encodeURIComponent(`Check out my GameLedger gaming profile and review logs: ${shareUrl}`);
+        waBtn.href = `https://api.whatsapp.com/send?text=${text}`;
+    }
+
+    // Telegram Button
+    const tgBtn = document.getElementById("share-telegram-btn");
+    if (tgBtn) {
+        const url = encodeURIComponent(shareUrl);
+        const text = encodeURIComponent(`Check out my GameLedger gaming profile!`);
+        tgBtn.href = `https://t.me/share/url?url=${url}&text=${text}`;
+    }
+
+    // Twitter / X Button
+    const twBtn = document.getElementById("share-twitter-btn");
+    if (twBtn) {
+        const text = encodeURIComponent(`Here are the games I've logged on @GameLedger: ${shareUrl}`);
+        twBtn.href = `https://twitter.com/intent/tweet?text=${text}`;
+    }
+
+    // Native Share Sheet (on mobile phones / supporting browsers)
+    const nativeBtn = document.getElementById("share-native-btn");
+    if (nativeBtn) {
+        if (navigator.share) {
+            nativeBtn.style.display = "inline-flex";
+            nativeBtn.onclick = () => {
+                navigator.share({
+                    title: `GameLedger - @${username}`,
+                    text: "Check out my gaming records and reviews on GameLedger!",
+                    url: shareUrl
+                }).catch(() => {});
+            };
+        } else {
+            nativeBtn.style.display = "none";
+        }
+    }
+
+    shareModal.style.display = "flex";
+}
+
+if (headerShareBtn) headerShareBtn.addEventListener("click", openShareModal);
+if (drawerShareBtn) drawerShareBtn.addEventListener("click", () => {
+    const profileDrawer = document.getElementById("profile-drawer");
+    if (profileDrawer) profileDrawer.classList.remove("open");
+    openShareModal();
+});
+
+if (closeShareModalBtn) {
+    closeShareModalBtn.addEventListener("click", () => {
+        shareModal.style.display = "none";
+    });
+}
+
+window.addEventListener("click", (e) => {
+    if (e.target === shareModal) {
+        shareModal.style.display = "none";
+    }
+});
+
+// Copy Share Link Button Handler
+if (copyShareLinkBtn) {
+    copyShareLinkBtn.addEventListener("click", () => {
+        if (!shareLinkInput) return;
+        shareLinkInput.select();
+        shareLinkInput.setSelectionRange(0, 99999);
+        navigator.clipboard.writeText(shareLinkInput.value).then(() => {
+            const btnText = document.getElementById("copy-btn-text");
+            if (btnText) btnText.innerText = "Copied! ✓";
+            showToast("Share link copied to clipboard! Ready to send to friends.");
+            setTimeout(() => {
+                if (btnText) btnText.innerText = "Copy";
+            }, 2500);
+        }).catch(() => {
+            document.execCommand("copy");
+            showToast("Share link copied!");
+        });
+    });
+}
+
+// ==========================================================================
+// PUBLIC VIEW-ONLY SHOWCASE RENDERER
+// ==========================================================================
+let publicSharedData = null;
+let publicViewMode = "grid";
+
+async function checkAndHydrateShareView() {
+    const params = new URLSearchParams(window.location.search);
+    const shareParam = params.get("share") || window.location.hash.replace("#share=", "");
+
+    if (!shareParam) return false;
+
+    try {
+        publicSharedData = await decompressFromShareUrl(shareParam);
+        if (!publicSharedData || !publicSharedData.g) {
+            throw new Error("Invalid payload format");
+        }
+    } catch (e) {
+        console.error("Failed to decode shared ledger:", e);
+        showToast("Could not load shared ledger. Link may be invalid.", false);
+        return false;
+    }
+
+    // Switch to public share view
+    document.documentElement.classList.add("view-shared-mode");
+    document.documentElement.classList.remove("auth-logged-in", "auth-logged-out");
+
+    const appContainer = document.getElementById("app-container");
+    const authContainer = document.getElementById("auth-container");
+    const publicContainer = document.getElementById("public-view-container");
+
+    if (appContainer) appContainer.style.display = "none";
+    if (authContainer) authContainer.style.display = "none";
+    if (publicContainer) publicContainer.style.display = "block";
+
+    // Populate user profile info
+    const username = publicSharedData.u || "Gamer";
+    document.title = `${username}'s GameLedger`;
+    const pubUserEl = document.getElementById("pub-username");
+    if (pubUserEl) pubUserEl.innerText = `@${username}`;
+
+    const avatarWrap = document.querySelector(".public-avatar-wrap");
+    const pubAvatar = document.getElementById("pub-avatar");
+    const pubFallback = document.getElementById("pub-avatar-fallback");
+    if (publicSharedData.a) {
+        pubAvatar.src = publicSharedData.a;
+        pubAvatar.style.display = "block";
+        pubFallback.style.display = "none";
+    } else {
+        pubAvatar.style.display = "none";
+        pubFallback.style.display = "flex";
+        pubFallback.innerText = username.substring(0, 2).toUpperCase();
+    }
+
+    // Wire up Exit Share View Button
+    const exitBtn = document.getElementById("exit-share-btn");
+    if (exitBtn) {
+        exitBtn.onclick = () => {
+            // Remove share query param from URL
+            const cleanUrl = window.location.origin + window.location.pathname;
+            window.history.pushState(null, "", cleanUrl);
+            document.documentElement.classList.remove("view-shared-mode");
+            publicContainer.style.display = "none";
+            // Normal hydration
+            initLocalCache();
+        };
+    }
+
+    // Wire up Public Controls
+    const searchInput = document.getElementById("pub-search-input");
+    const statusFilter = document.getElementById("pub-status-filter");
+    const gridBtn = document.getElementById("pub-view-grid-btn");
+    const listBtn = document.getElementById("pub-view-list-btn");
+
+    if (searchInput) searchInput.oninput = renderPublicView;
+    if (statusFilter) statusFilter.onchange = renderPublicView;
+
+    if (gridBtn && listBtn) {
+        gridBtn.onclick = () => {
+            publicViewMode = "grid";
+            gridBtn.classList.add("active");
+            listBtn.classList.remove("active");
+            renderPublicView();
+        };
+        listBtn.onclick = () => {
+            publicViewMode = "list";
+            listBtn.classList.add("active");
+            gridBtn.classList.remove("active");
+            renderPublicView();
+        };
+    }
+
+    renderPublicView();
+    return true;
+}
+
+function renderPublicView() {
+    if (!publicSharedData || !publicSharedData.g) return;
+
+    const games = publicSharedData.g.map(g => ({
+        id: "pub_" + Math.random().toString(36).substr(2, 9),
+        title: g.t,
+        rating: g.r,
+        status: g.s || "completed",
+        hours: g.h || 0,
+        month: g.m || "January",
+        year: g.y || 2024,
+        favorite: !!g.f,
+        image: g.img || "",
+        cleanNotes: g.n || "",
+        notes: g.n || ""
+    }));
+
+    // Stats calculation
+    const totalGames = games.length;
+    const totalHours = games.reduce((acc, curr) => acc + (curr.hours || 0), 0);
+    const avgRating = totalGames > 0
+        ? (games.reduce((acc, curr) => acc + (curr.rating || 0), 0) / totalGames).toFixed(1)
+        : "0.0";
+    const completedCount = games.filter(g => g.status === "completed").length;
+    const compRate = totalGames > 0 ? Math.round((completedCount / totalGames) * 100) : 0;
+
+    const elGames = document.getElementById("pub-total-games");
+    const elHours = document.getElementById("pub-total-hours");
+    const elRating = document.getElementById("pub-avg-rating");
+    const elComp = document.getElementById("pub-comp-rate");
+
+    if (elGames) elGames.innerText = totalGames;
+    if (elHours) elHours.innerText = totalHours > 0 ? `${totalHours}h` : "0h";
+    if (elRating) elRating.innerText = `${avgRating} ★`;
+    if (elComp) elComp.innerText = `${compRate}%`;
+
+    // Filter
+    const searchVal = (document.getElementById("pub-search-input")?.value || "").trim().toLowerCase();
+    const statusVal = document.getElementById("pub-status-filter")?.value || "all";
+
+    const filtered = games.filter(g => {
+        const matchesSearch = searchVal ? g.title.toLowerCase().includes(searchVal) : true;
+        let matchesStatus = true;
+        if (statusVal === "favorites") {
+            matchesStatus = g.favorite === true;
+        } else if (statusVal !== "all") {
+            matchesStatus = g.status === statusVal;
+        }
+        return matchesSearch && matchesStatus;
+    });
+
+    const grid = document.getElementById("pub-grid-section");
+    if (!grid) return;
+    grid.innerHTML = "";
+
+    if (filtered.length === 0) {
+        grid.innerHTML = `
+            <div class="empty-vault-state">
+                <div class="empty-state-icon">🎮</div>
+                <h3>No games match filter</h3>
+                <p>Try resetting the search query or status filter.</p>
+            </div>
+        `;
+        return;
+    }
+
+    if (publicViewMode === "list") {
+        const tableContainer = document.createElement("div");
+        tableContainer.className = "ledger-table-container";
+        let rowsHtml = "";
+
+        filtered.forEach(item => {
+            const statusInfo = getStatusMeta(item.status);
+            const stars = renderStars(item.rating);
+            let thumbHtml = "";
+            if (item.image) {
+                thumbHtml = `<img src="${item.image}" class="ledger-thumb-img" alt="${item.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">`;
+            }
+
+            rowsHtml += `
+                <tr class="ledger-row ${item.favorite ? 'is-favorite' : ''}" data-pub-id="${item.id}">
+                    <td style="width: 54px; padding-right: 0;">
+                        <div class="ledger-thumb-wrap">
+                            ${thumbHtml}
+                            <div class="ledger-thumb-fallback" style="display: ${item.image ? 'none' : 'flex'}">
+                                ${item.title.substring(0, 2).toUpperCase()}
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="ledger-title-text">
+                            ${item.favorite ? '<span style="color: #fbbf24; font-size: 14px;">★</span>' : ''}
+                            <span>${item.title}</span>
+                        </div>
+                        ${item.hours ? `<div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">${item.hours} hrs played</div>` : ''}
+                    </td>
+                    <td>
+                        <span class="status-badge ${statusInfo.cls}">${statusInfo.label}</span>
+                    </td>
+                    <td>
+                        <div class="card-rating" style="margin-bottom: 0;">${stars}</div>
+                    </td>
+                    <td style="color: var(--text-secondary); font-family: 'Space Grotesk', sans-serif;">
+                        ${item.hours ? item.hours + 'h' : '--'}
+                    </td>
+                    <td style="color: var(--text-secondary); font-size: 12.5px;">
+                        ${item.month} ${item.year}
+                    </td>
+                </tr>
+            `;
+        });
+
+        tableContainer.innerHTML = `
+            <table class="ledger-table">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>Game Title</th>
+                        <th>Status</th>
+                        <th>Rating</th>
+                        <th>Hours</th>
+                        <th>Logged Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
+        `;
+        grid.appendChild(tableContainer);
+    } else {
+        filtered.forEach(item => {
+            const card = document.createElement("div");
+            card.className = `card ${item.favorite ? 'is-favorite' : ''}`;
+            card.setAttribute("data-pub-id", item.id);
+            
+            const stars = renderStars(item.rating);
+            const statusInfo = getStatusMeta(item.status);
+            
+            let imageHtml = "";
+            if (item.image) {
+                imageHtml = `<img src="${item.image}" class="card-img" alt="${item.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">`;
+            }
+            
+            const style = getGlowStyle(item.title);
+            const favPill = item.favorite ? `<div class="card-fav-badge" title="All-Time Favorite">★</div>` : "";
+            
+            card.innerHTML = `
+                <div class="card-img-container" style="${style}">
+                    ${imageHtml}
+                    <div class="card-fallback" style="display: ${item.image ? 'none' : 'flex'}">
+                        ${item.title.substring(0, 2).toUpperCase()}
+                    </div>
+                    
+                    <div class="card-status-badge status-badge ${statusInfo.cls}">
+                        ${statusInfo.label}
+                    </div>
+
+                    ${favPill}
+
+                    <div class="card-date-badge" style="top: auto; bottom: 10px; left: 10px;">
+                        ${item.month} ${item.year}
+                    </div>
+
+                    ${item.hours ? `<div class="card-platform-pill"><span>${item.hours}h</span></div>` : ''}
+                </div>
+                <div class="card-content">
+                    <h3 class="card-title">${item.title}</h3>
+                    <div class="card-rating">${stars}</div>
+                    <p class="card-notes">${item.cleanNotes || 'No review notes written.'}</p>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+    }
+
+    // Attach click listener for public Detail Modal preview
+    grid.querySelectorAll(".card, .ledger-row").forEach(el => {
+        el.addEventListener("click", () => {
+            const id = el.getAttribute("data-pub-id");
+            const item = games.find(g => g.id === id);
+            if (item) {
+                openDetailModal(item);
+                // Hide edit button in public view
+                const editBtn = document.getElementById("detail-edit-btn");
+                const favBtn = document.getElementById("detail-fav-btn");
+                if (editBtn) editBtn.style.display = "none";
+                if (favBtn) favBtn.style.display = "none";
+            }
+        });
+    });
+}

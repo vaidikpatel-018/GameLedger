@@ -11,12 +11,16 @@
     <link rel="dns-prefetch" href="https://jyjpobfgdwvbyltkvlmu.supabase.co">
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=21">
+    <link rel="stylesheet" href="style.css?v=22">
     <link rel="icon" type="image/jpeg" href="favicon.jpg">
     <!-- Instant Zero-Latency Screen Resolver -->
     <script>
         (function() {
             try {
+                if (window.location.search.includes("share=") || window.location.hash.includes("share=")) {
+                    document.documentElement.classList.add("view-shared-mode");
+                    return;
+                }
                 var cached = localStorage.getItem("vault_cached_user");
                 if (cached) {
                     document.documentElement.classList.add("auth-logged-in");
@@ -41,6 +45,16 @@
                         <img id="header-avatar" src="" alt="PFP" style="display: none;">
                         <div id="header-avatar-fallback" class="avatar-fallback">U</div>
                     </div>
+                    <button type="button" id="header-share-btn" class="btn btn-secondary" title="Share your Ledger with friends">
+                        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="18" cy="5" r="3"></circle>
+                            <circle cx="6" cy="12" r="3"></circle>
+                            <circle cx="18" cy="19" r="3"></circle>
+                            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                        </svg>
+                        Share
+                    </button>
                     <button id="add-btn" class="btn btn-primary">+ Add New Game</button>
                     <button id="export-btn" class="btn btn-secondary">Backup Ledger</button>
                     <button id="import-btn" class="btn btn-secondary">Restore Ledger</button>
@@ -272,6 +286,58 @@
         </div>
     </div>
 
+    <!-- Glassmorphic Share Modal -->
+    <div id="share-modal" class="modal">
+        <div class="modal-content share-modal-content">
+            <span class="close-share-modal">&times;</span>
+            <div class="share-modal-header">
+                <h2>Share Your GameLedger</h2>
+                <p>Send a public, view-only showcase of your games, ratings, and playtime records to friends. They can view it immediately without logging in!</p>
+            </div>
+            
+            <div class="share-link-wrapper">
+                <input type="text" id="share-link-input" readonly>
+                <button type="button" id="copy-share-link-btn" class="btn btn-primary">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span id="copy-btn-text">Copy</span>
+                </button>
+            </div>
+
+            <div class="share-social-title">Send Directly To:</div>
+            <div class="share-social-grid">
+                <a id="share-whatsapp-btn" class="share-social-btn share-whatsapp" target="_blank" rel="noopener">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                        <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2zm.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.196 8.196 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24zm4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.25-.75-.67-1.26-1.5-1.4-1.75-.15-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.77 2.7 4.29 3.79.6.26 1.07.41 1.43.53.6.19 1.15.16 1.58.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.07-.1-.23-.17-.48-.29z"/>
+                    </svg>
+                    <span>WhatsApp</span>
+                </a>
+                <a id="share-telegram-btn" class="share-social-btn share-telegram" target="_blank" rel="noopener">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 0 0-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/>
+                    </svg>
+                    <span>Telegram</span>
+                </a>
+                <a id="share-twitter-btn" class="share-social-btn share-twitter" target="_blank" rel="noopener">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                    </svg>
+                    <span>X / Twitter</span>
+                </a>
+                <button type="button" id="share-native-btn" class="share-social-btn share-native" style="display: none;">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+                        <polyline points="16 6 12 2 8 6"></polyline>
+                        <line x1="12" y1="2" x2="12" y2="15"></line>
+                    </svg>
+                    <span>More Options...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Glassmorphic Modal for Feedback/Suggestions -->
     <div id="feedback-modal" class="modal">
         <div class="modal-content">
@@ -419,8 +485,117 @@
                 <button type="submit" class="btn btn-primary btn-block" style="margin-top: 10px;">Save Profile</button>
             </form>
             
+            <button type="button" id="drawer-share-btn" class="btn btn-secondary btn-block" style="margin-top: 14px; border-color: var(--accent-color); background: rgba(191, 59, 87, 0.15); color: #ffffff;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="18" cy="5" r="3"></circle>
+                    <circle cx="6" cy="12" r="3"></circle>
+                    <circle cx="18" cy="19" r="3"></circle>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                </svg>
+                Share My Public Ledger
+            </button>
+            
             <button id="profile-logout-btn" class="btn btn-danger btn-block" style="margin-top: auto; padding: 12px;">Log Out</button>
         </div>
+    </div>
+
+    <!-- Public Read-Only Share View -->
+    <div id="public-view-container" style="display: none;">
+        <header class="public-header">
+            <div class="container public-header-container">
+                <div class="logo">
+                    <h1>GAME<span>LEDGER</span></h1>
+                </div>
+                <div class="public-header-actions">
+                    <button type="button" id="exit-share-btn" class="btn btn-primary">
+                        Create Your Own Ledger ↗
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="container public-main">
+            <!-- Public User Profile Hero Card -->
+            <div class="public-hero-card">
+                <div class="public-user-info">
+                    <div class="public-avatar-wrap">
+                        <img id="pub-avatar" src="" alt="Avatar" style="display: none;">
+                        <div id="pub-avatar-fallback" class="avatar-fallback">U</div>
+                    </div>
+                    <div class="public-user-details">
+                        <div class="public-user-title-row">
+                            <h2 id="pub-username">Gamer</h2>
+                            <span class="public-view-badge">View Only</span>
+                        </div>
+                        <p class="public-subtitle">Verified GameLedger • Star ratings, review notes &amp; playtime records</p>
+                    </div>
+                </div>
+
+                <!-- Public Stats Grid -->
+                <div class="public-stats-grid">
+                    <div class="pub-stat">
+                        <span class="pub-stat-val" id="pub-total-games">0</span>
+                        <span class="pub-stat-lbl">Games Logged</span>
+                    </div>
+                    <div class="pub-stat">
+                        <span class="pub-stat-val" id="pub-total-hours">0h</span>
+                        <span class="pub-stat-lbl">Playtime</span>
+                    </div>
+                    <div class="pub-stat">
+                        <span class="pub-stat-val" id="pub-avg-rating">0.0 ★</span>
+                        <span class="pub-stat-lbl">Average Rating</span>
+                    </div>
+                    <div class="pub-stat">
+                        <span class="pub-stat-val" id="pub-comp-rate">0%</span>
+                        <span class="pub-stat-lbl">Completed</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Public View Controls -->
+            <section class="controls-section public-controls">
+                <div class="search-box">
+                    <input type="text" id="pub-search-input" placeholder="Search games in this ledger...">
+                </div>
+                <div class="filters">
+                    <div class="filter-group">
+                        <label for="pub-status-filter">Status:</label>
+                        <select id="pub-status-filter">
+                            <option value="all">All Statuses</option>
+                            <option value="playing">Playing</option>
+                            <option value="completed">Completed</option>
+                            <option value="dropped">Dropped</option>
+                            <option value="favorites">★ Favorites Only</option>
+                        </select>
+                    </div>
+                    <div class="view-mode-group">
+                        <button type="button" id="pub-view-grid-btn" class="view-mode-btn active" title="Poster Grid View">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+                                <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+                                <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+                                <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+                            </svg>
+                        </button>
+                        <button type="button" id="pub-view-list-btn" class="view-mode-btn" title="Compact Table View">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round">
+                                <line x1="8" y1="6" x2="21" y2="6"></line>
+                                <line x1="8" y1="12" x2="21" y2="12"></line>
+                                <line x1="8" y1="18" x2="21" y2="18"></line>
+                                <circle cx="3.5" cy="6" r="1.5" fill="currentColor"></circle>
+                                <circle cx="3.5" cy="12" r="1.5" fill="currentColor"></circle>
+                                <circle cx="3.5" cy="18" r="1.5" fill="currentColor"></circle>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Public Cards Container -->
+            <section id="pub-grid-section" class="grid-container">
+            </section>
+        </main>
     </div>
 
     <footer>
@@ -448,13 +623,11 @@
                 </a>
                 <!-- Reddit -->
                 <a href="https://reddit.com" class="social-icon" target="_blank" aria-label="Reddit">
-                    <svg viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <path d="M12 6v3M12 3h3M8 12c0-1 1-2 2-2s2 1 2 2-1 2-2 2-2-1-2-2zM14 12c0-1 1-2 2-2s2 1 2 2-1 2-2 2-2-1-2-2z"></path>
-                        <path d="M9 16c2 1.5 4 1.5 6 0"></path>
-                    </svg>
-                </a>
-            </div>
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M12 6v3M12 3h3M8 12c0-1 1-2 2-2s2 1 2 2-1 2-2 2-2-1-2-2zM14 12c0-1 1-2 2-2s2 1 2 2-1 2-2 2-2-1-2-2z"></path>
+                    <path d="M9 16c2 1.5 4 1.5 6 0"></path>
+                </svg>
+            </a>
         </div>
     </footer>
     </div>
@@ -521,6 +694,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=31"></script>
+    <script src="app.js?v=32"></script>
 </body>
 </html>
