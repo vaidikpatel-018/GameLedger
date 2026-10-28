@@ -2256,19 +2256,6 @@ html.view-shared-mode #public-view-container {
     color: var(--text-primary);
 }
 
-.public-view-badge {
-    padding: 3px 9px;
-    border-radius: 20px;
-    background: rgba(16, 185, 129, 0.15);
-    border: 1px solid rgba(16, 185, 129, 0.5);
-    color: #10b981;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
-}
-
 .public-subtitle {
     font-size: 13.5px;
     color: var(--text-secondary);
